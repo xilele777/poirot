@@ -27,7 +27,7 @@ from poirot.backend.agents.sandbox.utils.sandbox_id import validate_sandbox_id
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_IMAGE = "all-in-one-sandbox:latest"
+_DEFAULT_IMAGE = "ghcr.io/agent-infra/sandbox:latest"
 _CONTAINER_PORT = 8080
 _VIRTUAL_PATH_PREFIX = "/mnt/poirot/user-data"
 _MAX_PORT_RETRIES = 10

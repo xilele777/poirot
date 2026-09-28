@@ -72,7 +72,7 @@ class DockerSandboxProvider(SandboxProvider):
         path_mappings: list[PathMapping] | None = None,
         *,
         sandbox_config=None,
-        image: str = "all-in-one-sandbox:latest",
+        image: str = "ghcr.io/agent-infra/sandbox:latest",
         base_port: int = 8080,
         container_prefix: str = "poirot-sandbox",
         sandbox_root: str | None = None,

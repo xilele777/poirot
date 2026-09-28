@@ -119,7 +119,7 @@ Poirot 通过项目根目录的 `.env` 文件配置。`.env.example` 是完整�
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `POIROT_SANDBOX_USE` | 沙箱 provider 路径（留空=禁用） | 留空 |
-| `POIROT_SANDBOX_IMAGE` | Docker 镜像名 | `all-in-one-sandbox:latest` |
+| `POIROT_SANDBOX_IMAGE` | Docker 镜像名 | `ghcr.io/agent-infra/sandbox:latest` |
 | `POIROT_SANDBOX_PORT` | 容器起始端口（占用时自动递增） | `18000` |
 | `POIROT_SANDBOX_EXECUTOR` | Docker 执行环境（`local` / `wsl`） | `local` |
 | `POIROT_SANDBOX_WSL_DISTRO` | WSL 发行版名 | `Ubuntu` |
@@ -138,7 +138,7 @@ POIROT_SANDBOX_USE=poirot.backend.agents.sandbox.local.local_sandbox_provider:Lo
 POIROT_SANDBOX_USE=poirot.backend.agents.sandbox.docker.docker_sandbox_provider:DockerSandboxProvider
 ```
 
-> Docker 模式首次需拉取镜像：`docker pull all-in-one-sandbox:latest`
+> Docker 模式首次需拉取镜像：`docker pull ghcr.io/agent-infra/sandbox:latest`
 >
 > Windows + WSL2：设 `POIROT_SANDBOX_EXECUTOR=wsl`
 
@@ -423,11 +423,11 @@ POIROT_SANDBOX_USE=poirot.backend.agents.sandbox.local.local_sandbox_provider:Lo
 
 ```env
 POIROT_SANDBOX_USE=poirot.backend.agents.sandbox.docker.docker_sandbox_provider:DockerSandboxProvider
-POIROT_SANDBOX_IMAGE=all-in-one-sandbox:latest
+POIROT_SANDBOX_IMAGE=ghcr.io/agent-infra/sandbox:latest
 ```
 
 ```bash
-docker pull all-in-one-sandbox:latest
+docker pull ghcr.io/agent-infra/sandbox:latest
 ```
 
 ### Windows + WSL2

@@ -82,7 +82,7 @@ def _build_sandbox_config() -> SandboxConfig:
     return SandboxConfig(
         use=os.environ.get("POIROT_SANDBOX_USE", ""),
         allow_host_bash=os.environ.get("POIROT_SANDBOX_ALLOW_HOST_BASH", "true").lower() != "false",
-        image=os.environ.get("POIROT_SANDBOX_IMAGE", "all-in-one-sandbox:latest"),
+        image=os.environ.get("POIROT_SANDBOX_IMAGE", "ghcr.io/agent-infra/sandbox:latest"),
         port=int(os.environ.get("POIROT_SANDBOX_PORT", "18000") or "18000"),
         container_prefix=os.environ.get("POIROT_SANDBOX_CONTAINER_PREFIX", "poirot-sandbox"),
         executor=os.environ.get("POIROT_SANDBOX_EXECUTOR", "local") or "local",  # type: ignore[arg-type]

@@ -36,7 +36,7 @@ class DockerRuntime:
     """DockerRuntime — agent_sandbox SDK 调容器内 AIO runtime。
 
     方案 C 三组件之一。通过 agent_sandbox SDK（Fern 生成，sync）调容器内
-    all-in-one-sandbox 镜像。配合 IdentityTranslator 使用（容器内虚拟路径直传）。
+    ghcr.io/agent-infra/sandbox 镜像。配合 IdentityTranslator 使用（容器内虚拟路径直传）。
 
     INVARIANT:
     - sync 方法（匹配 SandboxRuntime Protocol + LocalRuntime + Sandbox 编排）

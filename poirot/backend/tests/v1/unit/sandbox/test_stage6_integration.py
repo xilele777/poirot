@@ -21,7 +21,7 @@ from poirot.backend.agents.sandbox.runtimes.docker_runtime import DockerRuntime 
 @pytest.fixture
 def provider() -> DockerSandboxProvider:
     return DockerSandboxProvider(
-        image="all-in-one-sandbox:latest",
+        image="ghcr.io/agent-infra/sandbox:latest",
         base_port=19000,
         container_prefix="poirot-itest",
         idle_timeout=0,

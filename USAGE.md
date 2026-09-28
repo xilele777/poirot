@@ -119,7 +119,7 @@ Poirot is configured via a `.env` file in the project root. `.env.example` is th
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `POIROT_SANDBOX_USE` | Sandbox provider path (empty = disabled) | empty |
-| `POIROT_SANDBOX_IMAGE` | Docker image name | `all-in-one-sandbox:latest` |
+| `POIROT_SANDBOX_IMAGE` | Docker image name | `ghcr.io/agent-infra/sandbox:latest` |
 | `POIROT_SANDBOX_PORT` | Container start port (auto-increment on conflict) | `18000` |
 | `POIROT_SANDBOX_EXECUTOR` | Docker exec env (`local` / `wsl`) | `local` |
 | `POIROT_SANDBOX_WSL_DISTRO` | WSL distro name (when executor=wsl) | `Ubuntu` |
@@ -138,7 +138,7 @@ POIROT_SANDBOX_USE=poirot.backend.agents.sandbox.local.local_sandbox_provider:Lo
 POIROT_SANDBOX_USE=poirot.backend.agents.sandbox.docker.docker_sandbox_provider:DockerSandboxProvider
 ```
 
-> Docker mode: pull image first — `docker pull all-in-one-sandbox:latest`
+> Docker mode: pull image first — `docker pull ghcr.io/agent-infra/sandbox:latest`
 >
 > Windows + WSL2 Docker: set `POIROT_SANDBOX_EXECUTOR=wsl`
 
@@ -534,12 +534,12 @@ Container isolation. For production:
 
 ```env
 POIROT_SANDBOX_USE=poirot.backend.agents.sandbox.docker.docker_sandbox_provider:DockerSandboxProvider
-POIROT_SANDBOX_IMAGE=all-in-one-sandbox:latest
+POIROT_SANDBOX_IMAGE=ghcr.io/agent-infra/sandbox:latest
 ```
 
 Pull image first:
 ```bash
-docker pull all-in-one-sandbox:latest
+docker pull ghcr.io/agent-infra/sandbox:latest
 ```
 
 ### Windows + WSL2
@@ -932,7 +932,7 @@ No provider has a non-empty API key. Check `.env`.
 ### Docker sandbox fails to start
 
 1. Docker daemon running: `docker info`
-2. Image pulled: `docker pull all-in-one-sandbox:latest`
+2. Image pulled: `docker pull ghcr.io/agent-infra/sandbox:latest`
 3. Windows + WSL2: `POIROT_SANDBOX_EXECUTOR=wsl`
 4. Port not occupied: adjust `POIROT_SANDBOX_PORT`
 

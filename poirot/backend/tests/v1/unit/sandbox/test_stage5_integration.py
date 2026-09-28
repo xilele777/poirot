@@ -20,7 +20,7 @@ from poirot.backend.agents.sandbox.runtimes.docker_runtime import DockerRuntime 
 
 @pytest.fixture
 def provisioner() -> LocalContainerBackend:
-    return LocalContainerBackend(image="all-in-one-sandbox:latest", base_port=18000)
+    return LocalContainerBackend(image="ghcr.io/agent-infra/sandbox:latest", base_port=18000)
 
 
 def _await_ready(provisioner: LocalContainerBackend, info) -> None:

@@ -119,7 +119,7 @@ PoirotのASCIIロゴとウェルカム画面が表示されれば成功。
 | 変数 | 説明 | デフォルト |
 |------|------|-----------|
 | `POIROT_SANDBOX_USE` | Sandboxプロバイダーパス（空=無効） | 空 |
-| `POIROT_SANDBOX_IMAGE` | Dockerイメージ名 | `all-in-one-sandbox:latest` |
+| `POIROT_SANDBOX_IMAGE` | Dockerイメージ名 | `ghcr.io/agent-infra/sandbox:latest` |
 | `POIROT_SANDBOX_PORT` | コンテナ開始ポート | `18000` |
 | `POIROT_SANDBOX_EXECUTOR` | Docker実行環境（`local` / `wsl`） | `local` |
 | `POIROT_SANDBOX_WSL_DISTRO` | WSLディストロ名 | `Ubuntu` |
@@ -138,7 +138,7 @@ POIROT_SANDBOX_USE=poirot.backend.agents.sandbox.local.local_sandbox_provider:Lo
 POIROT_SANDBOX_USE=poirot.backend.agents.sandbox.docker.docker_sandbox_provider:DockerSandboxProvider
 ```
 
-> Dockerモード：最初にイメージをプル — `docker pull all-in-one-sandbox:latest`
+> Dockerモード：最初にイメージをプル — `docker pull ghcr.io/agent-infra/sandbox:latest`
 >
 > Windows + WSL2：`POIROT_SANDBOX_EXECUTOR=wsl`を設定
 
@@ -429,11 +429,11 @@ POIROT_SANDBOX_USE=poirot.backend.agents.sandbox.local.local_sandbox_provider:Lo
 
 ```env
 POIROT_SANDBOX_USE=poirot.backend.agents.sandbox.docker.docker_sandbox_provider:DockerSandboxProvider
-POIROT_SANDBOX_IMAGE=all-in-one-sandbox:latest
+POIROT_SANDBOX_IMAGE=ghcr.io/agent-infra/sandbox:latest
 ```
 
 ```bash
-docker pull all-in-one-sandbox:latest
+docker pull ghcr.io/agent-infra/sandbox:latest
 ```
 
 ### Windows + WSL2
