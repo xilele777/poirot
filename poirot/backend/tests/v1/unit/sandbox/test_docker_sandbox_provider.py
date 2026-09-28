@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import sys
 import time
-import types
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from poirot.backend.tests.v1.fixtures.sdk_stubs import install_stub_if_missing
 
 try:
     import anyio  # noqa: F401
@@ -13,15 +13,11 @@ try:
 except ImportError:
     HAS_ANYIO = False
 
-# 仅在真实 agent_sandbox 缺席时注入 mock（未装可选依赖的环境）。
-# 不能在真实包可用时注入：模块级写 sys.modules 不会还原，会污染后续
-# 集成测试（stage5/6 拿到 MagicMock 而非真实 SDK）。
-try:
-    import agent_sandbox  # noqa: F401
-except ImportError:
-    _mock_mod = types.ModuleType("agent_sandbox")
-    _mock_mod.Sandbox = MagicMock
-    sys.modules["agent_sandbox"] = _mock_mod
+# 仅在真实 agent_sandbox 缺席时注入占位（未装可选依赖的环境）。
+# 占位是模块级写入、不会还原，因此集成测试（stage5/6）改用
+# has_real_agent_sandbox() 判定并显式 skip，而非 pytest.importorskip
+# ——后者只看导入是否抛 ImportError，会被占位模块骗过。
+install_stub_if_missing()
 
 from poirot.backend.agents.sandbox.docker.docker_sandbox_provider import (  # noqa: E402
     DockerSandboxProvider,

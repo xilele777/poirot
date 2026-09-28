@@ -7,19 +7,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-# 未装可选依赖 agent_sandbox 时，注入占位模块让本文件可导入。
-# 真实包可用时不要覆盖（模块级写 sys.modules 不会还原，会污染
-# 后续集成测试 stage5/6，使其拿到假 SDK）；SDK 客户端本身在
-# 下面的 _mock_sdk_client fixture 里按用例替换并自动还原。
-try:
-    import agent_sandbox  # noqa: F401
-except ImportError:
-    import sys
-    import types
+from poirot.backend.tests.v1.fixtures.sdk_stubs import install_stub_if_missing
 
-    _placeholder = types.ModuleType("agent_sandbox")
-    _placeholder.Sandbox = MagicMock
-    sys.modules["agent_sandbox"] = _placeholder
+# 未装可选依赖 agent_sandbox 时注入占位模块，让本文件可导入。
+# 占位是模块级写入、不会还原，因此集成测试（stage5/6）改用
+# has_real_agent_sandbox() 判定并显式 skip，而非 pytest.importorskip
+# ——后者只看导入是否抛 ImportError，会被占位模块骗过。
+# SDK 客户端本身在 _mock_sdk_client fixture 里按用例替换并自动还原。
+install_stub_if_missing()
 
 from poirot.backend.agents.sandbox.exceptions import (
     SandboxCommandError,
