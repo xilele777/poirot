@@ -34,7 +34,7 @@ class TestIntegration:
     """End-to-end DockerRuntime SDK calls + file operations against provisioner-created container."""
 
     def test_create_and_exec(self, provisioner: LocalContainerBackend) -> None:
-        info = provisioner.create("test-thread", "itest01")
+        info = provisioner.create("test-thread", "a1b2c301")
         try:
             assert info.sandbox_url
             _await_ready(provisioner, info)
@@ -48,7 +48,7 @@ class TestIntegration:
             provisioner.destroy(info)
 
     def test_write_and_read(self, provisioner: LocalContainerBackend) -> None:
-        info = provisioner.create("test-thread", "itest02")
+        info = provisioner.create("test-thread", "a1b2c302")
         try:
             _await_ready(provisioner, info)
             rt = DockerRuntime(info.sandbox_url)
@@ -62,12 +62,12 @@ class TestIntegration:
             provisioner.destroy(info)
 
     def test_is_alive_and_discover(self, provisioner: LocalContainerBackend) -> None:
-        info = provisioner.create("test-thread", "itest03")
+        info = provisioner.create("test-thread", "a1b2c303")
         try:
             assert provisioner.is_alive(info) is True
-            discovered = provisioner.discover("itest03")
+            discovered = provisioner.discover("a1b2c303")
             assert discovered is not None
-            assert discovered.sandbox_id == "itest03"
+            assert discovered.sandbox_id == "a1b2c303"
         finally:
             provisioner.destroy(info)
             assert provisioner.is_alive(info) is False

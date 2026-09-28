@@ -18,7 +18,9 @@ def test_expert_mode_true_activates_profile() -> None:
 
     assert config.runtime.expert_mode is True
     assert config.runtime.reflection_enabled is True
-    assert config.runtime.max_loop_steps == 8
+    # EXPERT_PROFILE 将循环上限放宽到 100（长程研究需要更多图节点预算），
+    # 与 defaults.py EXPERT_PROFILE["runtime"]["max_loop_steps"] 保持一致。
+    assert config.runtime.max_loop_steps == 100
 
 
 def test_cli_override_can_change_expert_mode() -> None:
