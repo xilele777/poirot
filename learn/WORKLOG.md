@@ -2,6 +2,7 @@
 
 ## 2026-09-28
 
+- 落地[测试隔离质量评审](reviews/0001-2026-09-28-评审-测试隔离质量.md)：归纳本轮修复的 7 处隔离缺陷、四种根因模式与根治建议。收尾清理 Docker：删除废弃镜像 `all-in-one-sandbox:latest`（此前已不存在）与 `ghcr.io/agent-infra/sandbox:latest`（13.1 GB，非 Docker 模式不再需要），并移除集成测试遗留的 `poirot-itest` 容器。其余 Docker 资源（markflow/openkb/mem0 等）属其他项目，未触碰。
 - 修复单 provider 路由空链崩溃：`route_chain_for` 在角色链空时回退到全部可用 provider（排除 fake/ollama）而非抛错，使"只配一个非 DeepSeek 的 provider"成为可用路径；顺带修了 `.env` 引入的测试环境污染——`test_default_strategy_e2e.py` 模块级 `load_dotenv()` 把 `OPENAI_MODEL` 灌进 `os.environ`，污染 `test_provider_config.py` 的默认模型断言，已加 autouse fixture 隔离。完整套件 2726 passed / 0 failed。详见[变更记录](changes/0007-2026-09-28-变更-修复单provider路由空链崩溃.md)。
 - 切换非 Docker 开发模式：`POIROT_SANDBOX_USE` 改为 LocalSandboxProvider（宿主进程，无容器）、executor=local、放开 host bash（危险命令仍被黑名单拦截）、MCP 关闭；配置中转站 OpenAI 端点与 `gpt-5.6-sol` 模型。端到端验证 LLM / 沙箱 / 运行时均可用，全程未接触 Docker。过程中发现两个缺陷并记录未修：单 OpenAI 时 reporter/reflection 路由链空报错（已用 `--provider openai` 单 provider 模式绕过）、空 `KEY=` 在 override=True 下覆盖 shell 变量。详见[变更记录](changes/0006-2026-09-28-变更-切换非Docker开发模式.md)。下一步：可删废弃镜像 `all-in-one-sandbox:latest`（13.1 GB）。
 - 决策并执行计划事项四、五：新增 `tests/v1/fixtures/sdk_stubs.py` 统一可选依赖占位注入——排查中发现这是真实缺陷而非风格问题，占位模块（无 `__file__`）能骗过 `pytest.importorskip`，使 stage5/6 集成测试带着假 SDK 运行后崩溃（误报失败），已实证复现并修复；事项四（CI 镜像）判为不做，前提不成立（仓库无任何 CI），改记录 `local_container_backend.py` 缺显式 `docker pull` 的真实风险。验证：未安装环境下 613 passed/2 skipped 零误报，完整套件 2723 passed 无回归。计划五项全部收敛，已归档至 `learn/archive/plans/`。详见[变更记录](changes/0005-2026-09-28-变更-统一可选依赖占位注入并评估CI镜像方案.md)。
