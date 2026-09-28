@@ -8,11 +8,12 @@ from typing import Any, Sequence
 
 from dotenv import load_dotenv
 
-# 显式从项目根加载 .env——load_dotenv() 默认只查 CWD，从非项目根启动时
-# POIROT_SKILL_* 等配置不进 env（CWD-relative），导致 skill 模块被误跳过。
-# main.py 位于 poirot/backend/app/cli/，parents[4] 即项目根。
+# 项目根：main.py 位于 poirot/backend/app/cli/，parents[4] 即项目根。
+# .env 由 main() 在启动时显式加载（load_dotenv 默认只查 CWD，从非项目根启动时
+# POIROT_SKILL_* 等 CWD-relative 配置不会进 env，故必须锚定项目根）。
+# **不在模块导入时加载**：导入副作用会把 .env 灌进 os.environ，污染同进程内
+# 导入本模块的调用方（典型是测试，见 learn/changes/0008）。
 _PROJECT_ROOT = Path(__file__).parents[4]
-load_dotenv(_PROJECT_ROOT / ".env")
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.patch_stdout import patch_stdout
