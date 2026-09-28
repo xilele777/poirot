@@ -148,6 +148,34 @@ class LocalContainerBackend(SandboxBackend):
     def _container_name(self, sandbox_id: str) -> str:
         return f"{self._prefix}-{sandbox_id}"
 
+    def _image_present(self) -> bool:
+        """本地是否已有该镜像（`image inspect` 退出码判定，兼容 docker/podman）。"""
+        result = self._executor.run(
+            [self._runtime, "image", "inspect", self._image],
+            capture_output=True, text=True, check=False,
+        )
+        return result.returncode == 0
+
+    def _ensure_image(self) -> None:
+        """镜像缺失时显式 pull，失败抛明确错误。
+
+        不依赖 `docker run` 的隐式拉取：那样首次启动会静默拉取整个镜像
+        （沙箱镜像可达 10GB+），既无进度、也无独立超时边界，失败时错误还会
+        混进"容器启动失败"里，难以定位。这里先探测、再显式拉取。
+        """
+        if self._image_present():
+            return
+        logger.info(f"Image {self._image} not present locally, pulling...")
+        try:
+            self._executor.run(
+                [self._runtime, "pull", self._image],
+                capture_output=True, text=True, check=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(
+                f"Failed to pull sandbox image {self._image}: {(exc.stderr or '').strip()}"
+            ) from exc
+
     def create(
         self,
         thread_id: str,
@@ -163,6 +191,7 @@ class LocalContainerBackend(SandboxBackend):
             logger.info(f"Reusing existing container {name}")
             return existing
 
+        self._ensure_image()
         next_start = self._base_port
         for _attempt in range(_MAX_PORT_RETRIES):
             port = _get_free_port(next_start)

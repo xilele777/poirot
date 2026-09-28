@@ -54,6 +54,39 @@ class TestContainerName:
         assert p._container_name("abc12345") == "test-sb-abc12345"
 
 
+class TestEnsureImage:
+    """镜像供给：缺失时显式 pull，失败抛明确错误（不依赖 docker run 隐式拉取）。"""
+
+    @patch("poirot.backend.agents.sandbox.docker.local_container_backend.subprocess.run")
+    def test_present_skips_pull(self, mock_run) -> None:
+        mock_run.return_value = _completed(stdout="[]\n", returncode=0)
+        p = _make_backend()
+        p._ensure_image()
+        assert mock_run.call_count == 1
+        assert mock_run.call_args.args[0] == ["docker", "image", "inspect", "test-image:latest"]
+
+    @patch("poirot.backend.agents.sandbox.docker.local_container_backend.subprocess.run")
+    def test_missing_triggers_pull(self, mock_run) -> None:
+        mock_run.side_effect = [
+            _completed(stderr="No such image", returncode=1),  # image inspect
+            _completed(stdout="pulled\n", returncode=0),  # docker pull
+        ]
+        p = _make_backend()
+        p._ensure_image()
+        assert mock_run.call_count == 2
+        assert mock_run.call_args_list[1].args[0] == ["docker", "pull", "test-image:latest"]
+
+    @patch("poirot.backend.agents.sandbox.docker.local_container_backend.subprocess.run")
+    def test_pull_failure_raises(self, mock_run) -> None:
+        mock_run.side_effect = [
+            _completed(stderr="No such image", returncode=1),
+            subprocess.CalledProcessError(1, [], stderr="manifest unknown"),
+        ]
+        p = _make_backend()
+        with pytest.raises(RuntimeError, match="Failed to pull sandbox image"):
+            p._ensure_image()
+
+
 class TestFormatMount:
     def test_docker_readwrite(self) -> None:
         result = _format_mount("docker", "/host/path", "/container/path", False)
@@ -85,8 +118,10 @@ class TestSandboxIdValidation:
         with pytest.raises(ValueError, match="invalid sandbox_id"):
             backend.discover("../../../")
 
-    def test_create_accepts_valid_id(self) -> None:
+    @patch("poirot.backend.agents.sandbox.docker.local_container_backend.subprocess.run")
+    def test_create_accepts_valid_id(self, mock_run) -> None:
         """合法 id 不在入口抛 ValueError（后续 docker 不可用会抛其他异常）。"""
+        mock_run.return_value = _completed(stderr="No such object", returncode=1)
         backend = _make_backend()
         with patch.object(backend, "_start_container", side_effect=RuntimeError("docker not running")):
             with pytest.raises(RuntimeError, match="docker not running"):
@@ -145,6 +180,7 @@ class TestCreate:
         # discover returns None (container not found), _start_container returns container_id
         mock_run.side_effect = [
             _completed(stdout="", stderr="no such container", returncode=1),  # discover inspect
+            _completed(stdout="[]\n", returncode=0),  # image inspect (present, no pull)
             _completed(stdout="container123\n", returncode=0),  # docker run
         ]
         p = _make_backend()
@@ -173,9 +209,9 @@ class TestCreate:
         mock_port.side_effect = [9090, 9091]
         mock_run.side_effect = [
             _completed(stdout="", stderr="no such container", returncode=1),  # discover inspect
-            subprocess.CalledProcessError(1, [], stderr="port is already allocated"),  # _start_container fail
-            _completed(stdout="", stderr="no such container", returncode=1),  # discover inspect (2nd port)
-            _completed(stdout="container456\n", returncode=0),  # _start_container success
+            _completed(stdout="[]\n", returncode=0),  # image inspect (present)
+            subprocess.CalledProcessError(1, [], stderr="port is already allocated"),  # docker run fail
+            _completed(stdout="container456\n", returncode=0),  # docker run success
         ]
         p = _make_backend()
         info = p.create("thread-1", "abc12345")
@@ -186,7 +222,8 @@ class TestCreate:
     def test_name_conflict_discover(self, mock_run, _mock_port) -> None:
         mock_run.side_effect = [
             _completed(stdout="", stderr="no such container", returncode=1),  # discover inspect (initial)
-            subprocess.CalledProcessError(1, [], stderr="is already in use by container"),  # _start_container fail
+            _completed(stdout="[]\n", returncode=0),  # image inspect (present)
+            subprocess.CalledProcessError(1, [], stderr="is already in use by container"),  # docker run fail
             _completed(stdout="true\n", returncode=0),  # discover inspect (after conflict)
             _completed(stdout="0.0.0.0:9090\n", returncode=0),  # docker port
         ]
@@ -198,8 +235,11 @@ class TestCreate:
     @patch("poirot.backend.agents.sandbox.docker.local_container_backend.subprocess.run")
     def test_retry_exhausted(self, mock_run, mock_port) -> None:
         mock_port.side_effect = list(range(9000, 9000 + _MAX_PORT_RETRIES_TEST))
-        # discover inspect (1 call) + 10 _start_container failures
-        side_effects = [_completed(stderr="no such container", returncode=1)]  # discover
+        # discover inspect (1 call) + image inspect (1) + 10 docker run failures
+        side_effects = [
+            _completed(stderr="no such container", returncode=1),  # discover
+            _completed(stdout="[]\n", returncode=0),  # image inspect (present)
+        ]
         for _ in range(_MAX_PORT_RETRIES_TEST):
             side_effects.append(subprocess.CalledProcessError(1, [], stderr="port is already allocated"))
         mock_run.side_effect = side_effects
@@ -212,11 +252,12 @@ class TestCreate:
     def test_start_container_cmd_has_rm_and_env(self, mock_run, _mock_port) -> None:
         mock_run.side_effect = [
             _completed(stderr="no such container", returncode=1),  # discover
+            _completed(stdout="[]\n", returncode=0),  # image inspect (present)
             _completed(stdout="cid\n", returncode=0),  # docker run
         ]
         p = _make_backend()
         p.create("thread-1", "abc12345")
-        run_cmd = mock_run.call_args_list[1].args[0]
+        run_cmd = mock_run.call_args_list[2].args[0]
         assert "--rm" in run_cmd
         assert "-d" in run_cmd
         assert "--name" in run_cmd
@@ -231,11 +272,12 @@ class TestCreate:
     def test_start_container_bind_mount(self, mock_run, _mock_port) -> None:
         mock_run.side_effect = [
             _completed(stderr="no such container", returncode=1),  # discover
+            _completed(stdout="[]\n", returncode=0),  # image inspect (present)
             _completed(stdout="cid\n", returncode=0),  # docker run
         ]
         p = _make_backend(sandbox_root="/tmp/poirot-sandbox")
         p.create("thread-1", "abc12345")
-        run_cmd = mock_run.call_args_list[1].args[0]
+        run_cmd = mock_run.call_args_list[2].args[0]
         mount_args = [run_cmd[i + 1] for i, a in enumerate(run_cmd) if a == "--mount"]
         assert any("type=bind" in m for m in mount_args)
         assert any("/mnt/poirot/user-data" in m for m in mount_args)
@@ -246,12 +288,13 @@ class TestCreate:
     def test_start_container_extra_mounts(self, mock_run, _mock_port) -> None:
         mock_run.side_effect = [
             _completed(stderr="no such container", returncode=1),  # discover
+            _completed(stdout="[]\n", returncode=0),  # image inspect (present)
             _completed(stdout="cid\n", returncode=0),  # docker run
         ]
         p = _make_backend()
         extra = [PathMapping("/mnt/poirot/skills", "/host/skills", read_only=True)]
         p.create("thread-1", "abc12345", extra_mounts=extra)
-        run_cmd = mock_run.call_args_list[1].args[0]
+        run_cmd = mock_run.call_args_list[2].args[0]
         mount_args = [run_cmd[i + 1] for i, a in enumerate(run_cmd) if a == "--mount"]
         assert any("/host/skills" in m and "readonly" in m for m in mount_args)
 
@@ -260,11 +303,12 @@ class TestCreate:
     def test_start_container_config_env(self, mock_run, _mock_port) -> None:
         mock_run.side_effect = [
             _completed(stderr="no such container", returncode=1),  # discover
+            _completed(stdout="[]\n", returncode=0),  # image inspect (present)
             _completed(stdout="cid\n", returncode=0),  # docker run
         ]
         p = _make_backend(environment={"NODE_ENV": "production"})
         p.create("thread-1", "abc12345")
-        run_cmd = mock_run.call_args_list[1].args[0]
+        run_cmd = mock_run.call_args_list[2].args[0]
         assert "NODE_ENV=production" in run_cmd
 
     @patch("poirot.backend.agents.sandbox.docker.local_container_backend._get_free_port", return_value=9090)
@@ -272,11 +316,12 @@ class TestCreate:
     def test_docker_seccomp_unconfined(self, mock_run, _mock_port) -> None:
         mock_run.side_effect = [
             _completed(stderr="no such container", returncode=1),  # discover
+            _completed(stdout="[]\n", returncode=0),  # image inspect (present)
             _completed(stdout="cid\n", returncode=0),  # docker run
         ]
         p = _make_backend()
         p.create("thread-1", "abc12345")
-        run_cmd = mock_run.call_args_list[1].args[0]
+        run_cmd = mock_run.call_args_list[2].args[0]
         assert "seccomp=unconfined" in run_cmd
 
 
