@@ -1,20 +1,25 @@
 from __future__ import annotations
 
 import base64
-import sys
 import threading
 import time
-import types
 from unittest.mock import MagicMock
 
 import pytest
 
-# Inject mock agent_sandbox module so tests run without the real package installed.
-# import firewall: only this test file injects mock.
-if "agent_sandbox" not in sys.modules:
-    _mock_mod = types.ModuleType("agent_sandbox")
-    _mock_mod.Sandbox = MagicMock
-    sys.modules["agent_sandbox"] = _mock_mod
+# 未装可选依赖 agent_sandbox 时，注入占位模块让本文件可导入。
+# 真实包可用时不要覆盖（模块级写 sys.modules 不会还原，会污染
+# 后续集成测试 stage5/6，使其拿到假 SDK）；SDK 客户端本身在
+# 下面的 _mock_sdk_client fixture 里按用例替换并自动还原。
+try:
+    import agent_sandbox  # noqa: F401
+except ImportError:
+    import sys
+    import types
+
+    _placeholder = types.ModuleType("agent_sandbox")
+    _placeholder.Sandbox = MagicMock
+    sys.modules["agent_sandbox"] = _placeholder
 
 from poirot.backend.agents.sandbox.exceptions import (
     SandboxCommandError,
@@ -24,10 +29,23 @@ from poirot.backend.agents.sandbox.exceptions import (
     SandboxPermissionError,
     SandboxRuntimeError,
 )
+from poirot.backend.agents.sandbox.runtimes import docker_runtime as _dr_module
 from poirot.backend.agents.sandbox.runtimes.docker_runtime import (
     _ERROR_OBSERVATION_SIGNATURE,
     DockerRuntime,
 )
+
+
+@pytest.fixture(autouse=True)
+def _mock_sdk_client(monkeypatch):
+    """把 docker_runtime 模块内的 AioSandboxClient 替换成 MagicMock。
+
+    用 monkeypatch patch 模块符号（而非写 sys.modules）——模块级替换会残留，
+    导致后续集成测试（stage5/6）拿到假 SDK；monkeypatch 在测试结束自动还原。
+    """
+    fake_client_cls = MagicMock()
+    monkeypatch.setattr(_dr_module, "AioSandboxClient", fake_client_cls)
+    yield fake_client_cls
 
 
 def _make_result(output: str = "", content: str = "", files=None):

@@ -396,15 +396,16 @@ class TestIsAlive:
         info = SandboxInfo(sandbox_id="abc", sandbox_url="", container_name="test-sb-abc")
         assert p.is_alive(info) is None
 
-    def test_no_name_none(self) -> None:
+    @patch("poirot.backend.agents.sandbox.docker.local_container_backend.subprocess.run")
+    def test_no_name_none(self, mock_run) -> None:
         p = _make_backend()
-        # container_name=None, sandbox_id="" 鈫?_container_name("") returns "test-sb-"
-        # but name would be "test-sb-" which is truthy. Test the real edge: sandbox_id empty
+        # sandbox_id 为空时 _container_name("") 得到 "test-sb-"（truthy），
+        # 于是 is_alive 仍会查询 docker；这里 mock 成"容器不存在"，
+        # 确定性返回 False，不依赖宿主是否装了 docker。
+        mock_run.return_value = _completed(stderr="no such container: test-sb-", returncode=1)
         info = SandboxInfo(sandbox_id="", sandbox_url="")
-        # _container_name("") = "test-sb-" which is truthy, so is_alive proceeds to docker
-        # On Windows without docker, FileNotFoundError 鈫?None
         result = p.is_alive(info)
-        assert result is None
+        assert result is False
 
 
 class TestListRunning:

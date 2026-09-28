@@ -13,8 +13,12 @@ try:
 except ImportError:
     HAS_ANYIO = False
 
-# Inject mock agent_sandbox (for DockerRuntime lazy import in _make_sandbox)
-if "agent_sandbox" not in sys.modules:
+# 仅在真实 agent_sandbox 缺席时注入 mock（未装可选依赖的环境）。
+# 不能在真实包可用时注入：模块级写 sys.modules 不会还原，会污染后续
+# 集成测试（stage5/6 拿到 MagicMock 而非真实 SDK）。
+try:
+    import agent_sandbox  # noqa: F401
+except ImportError:
     _mock_mod = types.ModuleType("agent_sandbox")
     _mock_mod.Sandbox = MagicMock
     sys.modules["agent_sandbox"] = _mock_mod

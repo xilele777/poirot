@@ -13,6 +13,21 @@ from poirot.backend.agents.multiagent.credentials.claude_credential import (
     ClaudeCredentialProvider,
 )
 
+# provider 的支持凭证环境变量。默认全部清空，使文件路径类用例不受宿主环境影响
+# （例如开发机本身设置了 ANTHROPIC_AUTH_TOKEN）。需要时由用例用 monkeypatch 显式设置。
+_CREDENTIAL_ENV_VARS = (
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "ANTHROPIC_AUTH_TOKEN",
+    "CLAUDE_CODE_CREDENTIALS_PATH",
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_credential_env(monkeypatch):
+    for var in _CREDENTIAL_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+    yield
+
 
 def _write_json(path: Path, data: dict) -> Path:
     path.write_text(json.dumps(data), encoding="utf-8")

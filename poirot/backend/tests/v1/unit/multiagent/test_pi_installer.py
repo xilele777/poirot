@@ -43,6 +43,20 @@ def _mock_npm_available(available: bool = True):
     )
 
 
+@pytest.fixture(autouse=True)
+def _default_npm_on_path(monkeypatch):
+    """默认让 shutil.which("npm") 命中，隔离宿主 PATH。
+
+    未显式 mock npm 可用性的用例（如 _install_in_background 系列）不应依赖
+    开发机是否装了 npm，否则同一用例在不同机器上结果不同。
+    需要 pi/npm 缺失场景的用例会在用例体内再次 setattr 覆盖本 fixture。
+    """
+    monkeypatch.setattr(
+        "poirot.backend.agents.multiagent.installer.pi_installer.shutil.which",
+        lambda cmd: "/usr/local/bin/npm" if cmd == "npm" else None,
+    )
+
+
 # ---------------------------------------------------------------------------
 # ensure_installed
 # ---------------------------------------------------------------------------
