@@ -2,6 +2,8 @@
 
 ## 2026-09-28
 
+- 收口[测试环境隔离层](changes/0008-2026-09-28-变更-建立测试环境隔离层并分层集成测试.md)的三项遗留：删除 `app/cli/main.py` 模块级 `load_dotenv`（导入副作用，`main()` 内已有 `override=True` 的加载）、`LocalContainerBackend` 增加显式 `docker pull`（`_image_present` + `_ensure_image`，不再依赖 `docker run` 隐式静默拉取 10GB+ 镜像）、新增隔离层元测试 `tests/test_conftest_isolation.py`（故意污染新增/既有环境变量与假模块，再断言后续用例看见干净状态）。结果：默认全量 **2729 passed / 2 skipped / 7 deselected 零失败**。详见[变更记录](changes/0009-2026-09-28-变更-收口测试环境隔离层遗留三项.md)。下一步：无。
+
 - 落地[测试环境隔离改造](archive/plans/0002-2026-09-28-计划-测试环境隔离改造.md)：新增项目级 `tests/conftest.py`（会话基线机制，每测试前后重置 `os.environ` 并清理假占位模块），铲除两处模块级 `load_dotenv` 污染源（e2e 测试 + 生产 `app/cli/main.py` 导入副作用）并撤掉下游挡板 fixture，注册 `integration` marker 使默认全量排除集成层。结果：默认全量 **2720 passed 零失败**（修复前 6 failed），`-m integration` 在无 Docker 守护进程时跳过而非报错。详见[变更记录](changes/0008-2026-09-28-变更-建立测试环境隔离层并分层集成测试.md)。下一步：为隔离层本身补元测试。
 - 落地[测试隔离质量评审](reviews/0001-2026-09-28-评审-测试隔离质量.md)：归纳本轮修复的 7 处隔离缺陷、四种根因模式与根治建议。收尾清理 Docker：删除废弃镜像 `all-in-one-sandbox:latest`（此前已不存在）与 `ghcr.io/agent-infra/sandbox:latest`（13.1 GB，非 Docker 模式不再需要），并移除集成测试遗留的 `poirot-itest` 容器。其余 Docker 资源（markflow/openkb/mem0 等）属其他项目，未触碰。
 - 修复单 provider 路由空链崩溃：`route_chain_for` 在角色链空时回退到全部可用 provider（排除 fake/ollama）而非抛错，使"只配一个非 DeepSeek 的 provider"成为可用路径；顺带修了 `.env` 引入的测试环境污染——`test_default_strategy_e2e.py` 模块级 `load_dotenv()` 把 `OPENAI_MODEL` 灌进 `os.environ`，污染 `test_provider_config.py` 的默认模型断言，已加 autouse fixture 隔离。完整套件 2726 passed / 0 failed。详见[变更记录](changes/0007-2026-09-28-变更-修复单provider路由空链崩溃.md)。
