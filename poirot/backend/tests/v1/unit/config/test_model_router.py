@@ -67,6 +67,38 @@ def test_no_available_provider_raises() -> None:
         route_chain_for("researcher", [])
 
 
+def test_route_falls_back_to_available_when_role_chain_empty() -> None:
+    """只配一个非 deepseek/qwen 的 provider（如 openai）时，reporter/reflection
+    的角色链为空，应回退到全部可用 provider 而非抛错——否则单 provider 启动即崩。"""
+    prov = [_pc("openai")]
+    for role in ("reporter", "reflection"):
+        chain = route_chain_for(role, prov)
+        assert [p.provider for p in chain] == ["openai"]
+
+
+def test_route_falls_back_prefers_role_chain_when_partial_match() -> None:
+    """角色链部分命中时，用命中的部分，不回退。"""
+    prov = [_pc("openai"), _pc("qwen")]
+    chain = route_chain_for("reporter", prov)  # route=["qwen","deepseek"]
+    assert [p.provider for p in chain] == ["qwen"]
+
+
+def test_route_fallback_excludes_no_key_providers() -> None:
+    """回退时不把 no_key_required 的 fake/ollama 收进降级链。"""
+    openai = _pc("openai")
+    fake = ProviderConfig(
+        provider="fake", model="fake-chat", api_key="", base_url=None,
+        priority=999, default=False, enabled=True,
+    )
+    ollama = ProviderConfig(
+        provider="ollama", model="llama3.1", api_key="", base_url="http://localhost:11434",
+        priority=110, default=False, enabled=True,
+    )
+    prov = [openai, ollama, fake]
+    chain = route_chain_for("reflection", prov)  # route=["deepseek"]，无交集 → 回退
+    assert [p.provider for p in chain] == ["openai"]
+
+
 # --- _should_fallback ---
 
 def test_should_fallback_on_timeout() -> None:

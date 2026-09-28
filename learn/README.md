@@ -7,6 +7,7 @@
 - [切换中文 README 主入口](changes/0004-2026-09-28-变更-切换中文README主入口.md)
 - [统一可选依赖占位注入并评估 CI 镜像方案](changes/0005-2026-09-28-变更-统一可选依赖占位注入并评估CI镜像方案.md)
 - [切换非 Docker 开发模式](changes/0006-2026-09-28-变更-切换非Docker开发模式.md)
+- [修复单 provider 路由空链崩溃](changes/0007-2026-09-28-变更-修复单provider路由空链崩溃.md)
 
 已完成计划归档于 [`archive/plans/`](archive/plans/)。
 

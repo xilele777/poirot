@@ -125,6 +125,7 @@ def route_chain_for(role: str, providers: list[ProviderConfig]) -> list[Provider
 
     - role 未配置 → 默认 ["deepseek"]
     - 链空或尾非 deepseek 且 deepseek 可用 → 追加 deepseek 兜底
+    - 角色链与可用 provider 无交集 → 回退到全部可用 provider（保证能启动）
     - 无任何可用 → 抛 ProviderConfigError
     """
     route = MODEL_ROUTES.get(role, ["deepseek"])
@@ -132,6 +133,13 @@ def route_chain_for(role: str, providers: list[ProviderConfig]) -> list[Provider
     chain = [by_name[name] for name in route if name in by_name]
     if "deepseek" in by_name and (not chain or chain[-1].provider != "deepseek"):
         chain.append(by_name["deepseek"])
+    if not chain:
+        # 角色路由链假设了 deepseek/qwen 存在；只配一个其他 provider（如 openai）
+        # 时链会空。此时回退到全部可用 provider 而非抛错——否则 bootstrap 在
+        # 启动路径上 build_model("reporter") 会直接崩溃。
+        # 排除 no_key_required 的测试/本地 provider（fake/ollama），它们不是
+        # 真实降级目标。
+        chain = [p for p in providers if not _is_no_key(p.provider)]
     if not chain:
         raise ProviderConfigError(f"no available provider for role: {role}")
     return chain

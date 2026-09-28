@@ -7,6 +7,24 @@ from poirot.backend.agents.config.provider_config import (
     select_provider_config,
 )
 
+# 本文件断言 provider 的默认模型（如 gpt-4.1-mini），依赖 *_MODEL 环境变量未设置。
+# 但 integration/test_default_strategy_e2e.py 在模块导入时 load_dotenv()，会把
+# 本地 .env 里的 OPENAI_MODEL 等灌进 os.environ，污染本文件后续用例。
+_PROVIDER_ENV_VARS = (
+    "DEEPSEEK_MODEL",
+    "OPENAI_MODEL",
+    "QWEN_MODEL",
+    "ANTHROPIC_MODEL",
+    "GEMINI_MODEL",
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_provider_model_env(monkeypatch):
+    for var in _PROVIDER_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+    yield
+
 
 def test_selects_explicit_provider_before_default() -> None:
     config = select_provider_config(provider="openai")
