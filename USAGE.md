@@ -2,7 +2,7 @@
 
 > Complete guide for installing, configuring, and operating Poirot.
 >
-> **Languages:** [English](USAGE.md) · [简体中文](resource/USAGE.zh-CN.md) · [日本語](resource/USAGE.ja.md)
+> **Languages:** [English](USAGE.md) · [简体中文](resource/USAGE.zh-CN.md) · [日本語](resource/USAGE.ja.md) · [README](README.md)
 
 ---
 

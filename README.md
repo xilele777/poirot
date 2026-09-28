@@ -2,16 +2,16 @@
 
 <img alt="Poirot README Hero" width="960" src="resource/assets/poirot-readme-hero.png">
 
-### A Deep Research Agent Kernel with Long-Term Memory
+### 带长期记忆的深度研究 Agent 内核
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-7c6ff0?style=for-the-badge)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-45c4b8?style=for-the-badge)](https://www.python.org/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-1.x-5aa9f5?style=for-the-badge)](https://github.com/langchain-ai/langgraph)
 [![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek-00BFFF?style=for-the-badge)](https://www.deepseek.com/)
 
-**📚 Documentation:** [English](USAGE.md) · [简体中文](resource/USAGE.zh-CN.md) · [日本語](resource/USAGE.ja.md)
+**📚 文档：** [简体中文](README.md) · [English](resource/README.en.md) · [使用说明](resource/USAGE.zh-CN.md) · [日本語](resource/USAGE.ja.md)
 
-<sub>ReAct Loop · Context Governance · 5-Layer Memory · Multi-Agent Orchestration · Skill Self-Evolution · Sandbox Isolation</sub>
+<sub>ReAct 循环 · 上下文治理 · 五层记忆 · 多 Agent 编排 · Skill 自进化 · Sandbox 隔离</sub>
 
 </div>
 
@@ -22,95 +22,96 @@
   <img alt="Poirot" width="720" src="resource/assets/poirot-logo.png">
 </picture>
 
-## Overview
+## 项目简介
 
-Poirot is a deep research agent kernel built for those who care about **how** agents are architected. Rather than chasing a feature checklist, Poirot establishes a clean, decoupled, evaluable foundation — from the ReAct core loop to context engineering governance, from a five-layer long-term memory system to multi-agent orchestration with shared sandbox isolation, from sandbox path enforcement to a three-layer skill self-evolution system.
+Poirot 是面向**关注 Agent 如何被架构的人**设计的深度研究 Agent 内核。它不追求功能清单的堆砌，而是建立一个清晰、解耦、可评估的基础——从 ReAct 核心循环到上下文工程治理，从五层长期记忆系统到共享沙箱隔离的多 Agent 编排，从沙箱路径管控到三层 Skill 自进化体系。
 
-Every module is independently designed, independently tested, and independently verifiable. **2400+ tests** guard every layer.
+每个模块都独立设计、独立测试、独立可验证。**2400+ 测试**守护每一层。
 
 ---
 
-## Core Modules
+## 核心模块
 
-### 🧠 ReAct Research Kernel
+### 🧠 ReAct 研究内核
 
-A single `LeaderAgent` orchestrates the research loop. LangGraph handles outer flow orchestration (`prepare → leader_agent → finalize`), while **21 middleware** cross-cut every lifecycle hook: `before/after_agent`, `before/after_model`, `wrap_tool_call`.
+单个 `LeaderAgent` 编排研究循环。LangGraph 负责外层流程编排（`prepare → leader_agent → finalize`），**21 个 middleware** 横切每个生命周期钩子：`before/after_agent`、`before/after_model`、`wrap_tool_call`。
 
-**Breakthrough:** Middleware are first-class citizens — memory recall, skill injection, sandbox lifecycle, consolidation, tool-call pairing, help requests, and context governance are all pluggable cross-cutting concerns, not embedded in the agent loop. The `app → agents` dependency is strictly one-directional.
+**突破点：** middleware 是一等公民——记忆召回、Skill 注入、Sandbox 生命周期、记忆巩固、工具调用配对、求助请求、上下文治理全部是可插拔的横切关注点，而非内嵌在 Agent 循环里。`app → agents` 的依赖严格单向。
 
-### 📐 Context Engineering Governance
+### 📐 上下文工程治理
 
-The `DefaultStrategy` dynamically externalizes historical messages based on a live token budget. Window size is resolved by **penetrating through the `FallbackChatModel`** to the active provider's real context window — no hardcoded thresholds. Dual strategies — compaction (summarization) and externalization (offloading) — prevent context overflow in long research sessions without losing critical information.
+`DefaultStrategy` 基于实时 token 预算动态外置历史消息。窗口大小通过**穿透 `FallbackChatModel`** 解析到当前 provider 的真实上下文窗口——不写死阈值。压缩（摘要）与外置（卸载）双策略并行，让长时间研究会话既不会上下文溢出，也不丢失关键信息。
 
-**Breakthrough:** The governance layer treats token budget as a first-class runtime concern. The fraction denominator is the *real* model window (resolved at call time), not a static config — making P5 circuit-breaker thresholds accurate across provider switches.
+**突破点：** 治理层把 token 预算当作一等运行时关注点。分母是*真实*模型窗口（调用时解析），而非静态配置——这使 P5 熔断阈值在切换 provider 后依然准确。
 
-### 🧬 Five-Layer Long-Term Memory
+### 🧬 五层长期记忆
 
-Poirot implements a cognitive-science-inspired memory system across five layers, each independently testable:
+Poirot 实现了受认知科学启发的五层记忆系统，每层独立可测：
 
-| Layer | Role | Key Breakthrough |
+| 层 | 职责 | 关键设计 |
 |-------|------|-----------------|
-| **L1** | Schema + Protocol | `MemoryTrace` frozen dataclass (15 fields) + `MemoryType` enum (episodic/semantic/procedural) + 5 atomic operations (Encode/Retrieve/Associate/Consolidate/Reconsolidate) — **tools have no LLM**, pure data operations |
-| **L2** | Default Strategies | Ebbinghaus decay formula (`strength = base×(1-decay)^hours + log(1+access)×0.1 + importance×0.05`) + composite forget (TTL + strength threshold) + 6 hard-wired decisions (A1-F2) — **lazy decay**, strength computed at retrieve time, no background tasks |
-| **L3** | Store + Retriever | `MarkdownFileStore` (single `traces.md` truth source + `<!-- trace: {id} -->` separators + YAML frontmatter) + `HybridRetriever` (pure BM25, no vector/graph dependency) — **retrieve reinforcement write-back** (1A:命中后 store.update 强化 strength) + **forgotten filtering** (3B: metadata.forgotten=True excluded) + **incremental index** (5B: store decorator triggers retriever.on_trace_*) |
-| **L4** | Middleware + Bootstrap | `MemoryMiddleware.abefore_model` — per-call `HumanMessage` injection (protects prompt caching, `hide_from_ui=True`) + `set_turn_id` ContextVar (traceability C: actor = turn:N) + bootstrap lifecycle (lazy-load double-check lock + `set_memory_config` global singleton sync) |
-| **L5** | Auto-Consolidation | `MemoryConsolidationMiddleware.aafter_model` — **non-blocking** submit every N turns + `MemoryWorker` (daemon thread + `threading.Queue` + LLM construction injection) — LLM extracts episodic memories → `manager.encode` → candidate ≥ N → LLM generates merged content → `manager.consolidate` (max=10, E1) — **errors: log + skip**, never blocks main loop |
+| **L1** | Schema + Protocol | `MemoryTrace` 冻结 dataclass（15 字段）+ `MemoryType` 枚举（episodic/semantic/procedural）+ 5 个原子操作（Encode/Retrieve/Associate/Consolidate/Reconsolidate）——**工具不含 LLM**，纯数据操作 |
+| **L2** | Default Strategies | 艾宾浩斯衰减公式（`strength = base×(1-decay)^hours + log(1+access)×0.1 + importance×0.05`）+ 复合遗忘（TTL + 强度阈值）+ 6 条硬编码决策（A1-F2）——**惰性衰减**，strength 在检索时计算，无后台任务 |
+| **L3** | Store + Retriever | `MarkdownFileStore`（单一 `traces.md` 真源 + `<!-- trace: {id} -->` 分隔符 + YAML frontmatter）+ `HybridRetriever`（纯 BM25，不依赖向量/图）——**检索强化回写**（1A：命中后 store.update 强化 strength）+ **遗忘过滤**（3B：metadata.forgotten=True 被排除）+ **增量索引**（5B：store 装饰器触发 retriever.on_trace_*） |
+| **L4** | Middleware + Bootstrap | `MemoryMiddleware.abefore_model`——按调用注入 `HumanMessage`（保护 prompt 缓存，`hide_from_ui=True`）+ `set_turn_id` ContextVar（可追溯性 C：actor = turn:N）+ bootstrap 生命周期（懒加载双重检查锁 + `set_memory_config` 全局单例同步） |
+| **L5** | Auto-Consolidation | `MemoryConsolidationMiddleware.aafter_model`——每 N 轮**非阻塞**提交 + `MemoryWorker`（守护线程 + `threading.Queue` + LLM 构造注入）——LLM 抽取情景记忆 → `manager.encode` → 候选 ≥ N → LLM 生成合并内容 → `manager.consolidate`（max=10，E1）——**出错只记日志并跳过**，绝不阻塞主循环 |
 
-**Key Design:** Memory injection is per-call `HumanMessage` (not system prompt), protecting the LLM's prompt cache prefix. `recalled_memories` in state stores only indices (id+score+strength), not full content. The `MemoryConfig` has 4 STARTUP_ONLY fields (use/storage_path/vector_store/graph_store) — the rest are runtime-swappable via `set_memory_config()`.
+**关键设计：** 记忆以按调用的 `HumanMessage` 注入（而非 system prompt），保护 LLM 的 prompt 缓存前缀。state 中的 `recalled_memories` 只存索引（id+score+strength），不存全文。`MemoryConfig` 有 4 个 STARTUP_ONLY 字段（use/storage_path/vector_store/graph_store），其余可通过 `set_memory_config()` 运行时替换。
 
-### 🤝 Multi-Agent Orchestration
+### 🤝 多 Agent 编排
 
-Poirot supports delegating sub-tasks to external coding agents and internal self-copies:
+Poirot 支持把子任务委派给外部编码 Agent 和内部自我副本：
 
-- **Specialist Delegation** — `delegate_to_specialist(goal, success_criteria)` routes to external CLIs (pi / codex / claude) via MCP `SpecialistMcpServer` (8 sandbox tools exposed). Each specialist runs as a separate process with its own LLM, but shares the **same Docker sandbox** via `--sandbox-url` passthrough.
-- **Subagent (Self-Copy)** — `delegate_to_subagent(goal)` creates a Poirot self-copy with isolated context (no inherited message history) but shared thread sandbox. `SandboxMiddleware.abefore_model` restores `ContextVar` from `state["sandbox"]` — subagent reuses parent's `sandbox_id` without re-acquiring.
-- **L2 Evolution Layer** — data-driven specialist self-evolution: `MetricMonitor` triggers when `effective_rate < threshold`, `IVEFocuser` diagnoses, `LLMMutator` varies, `ScoreDeltaGate` gates, `GitRatchet` rollbacks on degradation.
-- **L3 Eval Layer** — three-layer evaluation: execution judgment (per-skill per-task LLM), task quality scoring (4-dimension weighted), response contract checking. `RuntimeTracker` feeds degradation signals back to L2.
+- **专家委派（Specialist Delegation）**——`delegate_to_specialist(goal, success_criteria)` 通过 MCP `SpecialistMcpServer`（暴露 8 个 sandbox 工具）路由到外部 CLI（pi / codex / claude）。每个专家是独立进程、独立 LLM，但通过 `--sandbox-url` 透传**共享同一个 Docker 沙箱**。
+- **子 Agent（自我副本）**——`delegate_to_subagent(goal)` 创建上下文隔离的 Poirot 自我副本（不继承消息历史），但共享 thread sandbox。`SandboxMiddleware.abefore_model` 从 `state["sandbox"]` 恢复 `ContextVar`——子 Agent 复用父级的 `sandbox_id`，无需重新申请。
+- **L2 进化层**——数据驱动的专家自进化：`MetricMonitor` 在 `effective_rate < threshold` 时触发，`IVEFocuser` 诊断，`LLMMutator` 变异，`ScoreDeltaGate` 把关，`GitRatchet` 在退化时回滚。
+- **L3 评估层**——三层评估：执行判定（逐 Skill 逐任务 LLM）、任务质量评分（四维加权）、响应契约检查。`RuntimeTracker` 把退化信号回馈给 L2。
 
-**Breakthrough:** The "shared thread sandbox" (INV#3) is now **actually implemented** — subagent restores ContextVar from state, specialist connects to write to the same mount area, not ephemeral container-internal paths.
+**突破点：**「共享 thread sandbox」（INV#3）已**真正落地**——子 Agent 从 state 恢复 ContextVar，专家连接到同一挂载区写入，而非容器内的临时路径。
 
-### 🛡️ Sandbox Isolation with Path Enforcement
+### 🛡️ Sandbox 隔离与路径管控
 
-Two providers: **Local** (host process, for development) and **Docker** (container isolation, for production).
+两个 provider：**Local**（宿主进程，用于开发）与 **Docker**（容器隔离，用于生产）。
 
-**Docker mode breakthroughs:**
-- **`DockerPathTranslator`** — `translate_path` passes through (container path = bind mount path), `reverse_translate` maps `/mnt/poirot/user-data/<x>` → `<sandbox_root>/<sandbox_id>/<x>` (Windows host path) — fixes the `present_files` artifact extraction chain (`shutil.copy2` now gets a real Windows path, not a container path)
-- **`DockerPathGuard`** — write path whitelist: `write_file`/`str_replace` paths must be under `/mnt/poirot/user-data/`, bash redirect targets (`>{1,2}\s*(/[^\s;|&]*)`) must be in mount area — **forces agent writes to persist**, not lost in container-internal `/tmp` on `--rm`
-- **Warm pool** — pre-created containers reduce cold-start latency
-- **Idle auto-destroy** — `POIROT_SANDBOX_IDLE_TIMEOUT=600` (10min)
-- **Cross-process lock** — concurrent Poirot instances don't conflict (3-function lock: open/lock/unlock)
-- **WSL2 executor** — `WslDockerExecutor` translates `D:\foo\bar` → `/mnt/d/foo/bar` for Docker daemon in WSL2
+**Docker 模式突破点：**
 
-### 🔌 MCP Tool Ecosystem
+- **`DockerPathTranslator`**——`translate_path` 直通（容器路径 = bind mount 路径），`reverse_translate` 把 `/mnt/poirot/user-data/<x>` 映射回 `<sandbox_root>/<sandbox_id>/<x>`（Windows 宿主路径）——修复了 `present_files` 产物提取链路（`shutil.copy2` 现在拿到的是真实 Windows 路径，而非容器路径）
+- **`DockerPathGuard`**——写路径白名单：`write_file`/`str_replace` 的路径必须在 `/mnt/poirot/user-data/` 下，bash 重定向目标（`>{1,2}\s*(/[^\s;|&]*)`）必须在挂载区内——**强制 Agent 的写入落盘持久化**，不会因 `--rm` 丢在容器内部 `/tmp`
+- **热池**——预创建容器降低冷启动延迟
+- **空闲自动销毁**——`POIROT_SANDBOX_IDLE_TIMEOUT=600`（10 分钟）
+- **跨进程锁**——并发 Poirot 实例不冲突（open/lock/unlock 三函数锁）
+- **WSL2 executor**——`WslDockerExecutor` 把 `D:\foo\bar` 转换成 `/mnt/d/foo/bar`，适配 WSL2 中的 Docker daemon
 
-Three transports: `stdio`, `sse`, `http`. Core tools load at startup; non-core tools defer-load on demand. Tool equivalence fallback chains (e.g., `web_search` → MCP server → builtin ddg) ensure resilience. Tool metadata drives externalization thresholds. Configured via `.poirot/mcp_servers.yaml`.
+### 🔌 MCP 工具生态
 
-### 🎯 Three-Layer Skill Architecture
+三种传输：`stdio`、`sse`、`http`。核心工具启动时加载，非核心工具按需延迟加载。工具等价回退链（如 `web_search` → MCP server → 内置 ddg）保证韧性。工具元数据驱动外置阈值。通过 `.poirot/mcp_servers.yaml` 配置。
 
-Skills are **research process knowledge bundles** — prompt-level injections, not executable functions. "How to verify a source" is a skill. "Execute a web search" is a tool.
+### 🎯 三层 Skill 架构
 
-- **Layer 1 (Base):** SQLite storage with version DAG, quality-filtered LLM hybrid selection, injection middleware, and four-counter metrics (selections / applied / completions / fallbacks).
-- **Layer 2 (Evolution):** `IVEFocuser` diagnosis, `LLMMutator` variation, `ScoreDeltaGate` gating, `GitRatchet` ratchet rollback. Skills auto-evolve when effective rate drops below threshold.
-- **Layer 3 (Eval):** Three-layer evaluation — execution judgment, task quality scoring (4-dimension weighted), response contract checking. `RuntimeTracker` monitors applied-rate trends and feeds degradation signals back to Layer 2.
+Skill 是**研究过程的知识包**——提示词层面的注入，不是可执行函数。「如何验证一个来源」是 Skill，「执行一次网页搜索」是工具。
 
-36 builtin skills across 5 categories (core / research / software-development / creative / productivity). Core skills auto-load; others discoverable via `/skill search`.
+- **第 1 层（基础）：** SQLite 存储 + 版本 DAG、质量过滤的 LLM 混合选择、注入 middleware，以及四计数器指标（selections / applied / completions / fallbacks）。
+- **第 2 层（进化）：** `IVEFocuser` 诊断、`LLMMutator` 变异、`ScoreDeltaGate` 把关、`GitRatchet` 棘轮回滚。当有效率跌破阈值时 Skill 自动进化。
+- **第 3 层（评估）：** 三层评估——执行判定、任务质量评分（四维加权）、响应契约检查。`RuntimeTracker` 监控应用率趋势，把退化信号回馈给第 2 层。
 
-### 🎨 Dual UI
+36 个内置 Skill，覆盖 5 个类别（core / research / software-development / creative / productivity）。核心 Skill 自动加载，其余通过 `/skill search` 发现。
 
-- **TUI** (default): Full-screen Textual app with welcome view + conversation view. Left scrollable log, bottom input box, status bar with live token usage. Wide screens show right-side session info panel.
-- **CLI** (`poirot cli`): Traditional scrolling mode with `prompt_toolkit` + `rich`. Slash-command completion + bottom toolbar.
+### 🎨 双 UI
 
-### 🔄 Multi-LLM Fallback
+- **TUI**（默认）：全屏 Textual 应用，含欢迎视图 + 会话视图。左侧可滚动日志、底部输入框、带实时 token 用量的状态栏。宽屏显示右侧会话信息面板。
+- **CLI**（`poirot cli`）：传统滚动模式，基于 `prompt_toolkit` + `rich`。支持斜杠命令补全 + 底部工具栏。
 
-`FallbackChatModel` constructs a role-based routing chain (researcher / reporter). On transient API failures (rate limit, timeout, 5xx), it automatically degrades to the next provider. DeepSeek always sits at the chain tail as the ultimate fallback.
+### 🔄 多 LLM 回退
 
-### 📊 Observability
+`FallbackChatModel` 构建基于角色的路由链（researcher / reporter）。遇到瞬时 API 故障（限流、超时、5xx）时自动降级到下一个 provider。DeepSeek 始终位于链尾作为最终兜底。
 
-`RunJournal` records structured events (`skill.select`, `skill.apply`, `memory.encode`, `memory.consolidate`, `compaction`, `budget`). Thread directories persist run artifacts. The `/expand` command unfolds the previous round's full Thought text and tool results.
+### 📊 可观测性
+
+`RunJournal` 记录结构化事件（`skill.select`、`skill.apply`、`memory.encode`、`memory.consolidate`、`compaction`、`budget`）。thread 目录持久化运行产物。`/expand` 命令展开上一轮的完整 Thought 文本与工具结果。
 
 ---
 
-## Architecture
+## 架构
 
 <div align="center">
 
@@ -118,78 +119,78 @@ Skills are **research process knowledge bundles** — prompt-level injections, n
 
 </div>
 
-<sub>Outer flow: `prepare → before_agent → LeaderAgent (ReAct loop) → after_agent → finalize`. 21 middleware cross-cut every hook. Memory recall (L4) happens in `before_model`, consolidation (L5) in `after_model`. Skill injection (L1+L2+L3) in `before_model`. Tool calls route through Sandbox / MCP / Builtin via `wrap_tool_call`. Multi-agent delegation via `delegate_to_specialist` / `delegate_to_subagent`.</sub>
+<sub>外层流程：`prepare → before_agent → LeaderAgent (ReAct loop) → after_agent → finalize`。21 个 middleware 横切每个钩子。记忆召回（L4）发生在 `before_model`，记忆巩固（L5）在 `after_model`。Skill 注入（L1+L2+L3）在 `before_model`。工具调用经 `wrap_tool_call` 路由到 Sandbox / MCP / Builtin。多 Agent 委派通过 `delegate_to_specialist` / `delegate_to_subagent`。</sub>
 
 ---
 
-## Quick Start
+## 快速开始
 
 ```bash
-# 1. Clone
-git clone <repo-url> && cd Poirot
+# 1. 克隆
+git clone https://github.com/xilele777/poirot.git && cd poirot
 
-# 2. Create environment (Python 3.12+)
+# 2. 创建环境（Python 3.12+）
 python -m venv .venv
 .venv\Scripts\activate         # Windows
 # source .venv/bin/activate    # Linux / macOS
 
-# 3. Install
+# 3. 安装
 pip install -e ".[dev]"
 
-# 4. Configure
+# 4. 配置
 cp .env.example .env
-# Edit .env — fill in at least: DEEPSEEK_API_KEY=sk-xxx
+# 编辑 .env —— 至少填入：DEEPSEEK_API_KEY=sk-xxx
 
-# 5. Launch (TUI by default)
+# 5. 启动（默认 TUI）
 poirot
 ```
 
-<sub>Type a question to start researching. Type `/` for command completion, `/help` for all commands.</sub>
+<sub>输入问题即可开始研究。输入 `/` 触发命令补全，`/help` 查看全部命令。</sub>
 
-### Enable Advanced Features
+### 启用高级功能
 
 ```env
-# Long-term memory (L4 recall + L5 auto-consolidation)
+# 长期记忆（L4 召回 + L5 自动巩固）
 POIROT_MEMORY_USE=default
 POIROT_MEMORY_PHASE2_ENABLED=true
 POIROT_MEMORY_PHASE2_TURNS=10
 
-# Skill system (L1 base + L2 evolution + L3 eval)
+# Skill 系统（L1 基础 + L2 进化 + L3 评估）
 POIROT_SKILL_ENABLED=true
 POIROT_SKILL_EVOLVE_ENABLED=true
 POIROT_SKILL_EVAL_ENABLED=true
 POIROT_SKILL_MAX_INJECT=15
 
-# Multi-Agent (specialist delegation + L2/L3)
+# 多 Agent（专家委派 + L2/L3）
 POIROT_MULTIAGENT_ENABLED=true
 POIROT_MULTIAGENT_L2_ENABLED=true
 POIROT_MULTIAGENT_L3_ENABLED=true
 
-# Docker sandbox (container isolation)
+# Docker 沙箱（容器隔离）
 POIROT_SANDBOX_USE=poirot.backend.agents.sandbox.docker.docker_sandbox_provider:DockerSandboxProvider
 POIROT_SANDBOX_EXECUTOR=wsl              # Windows + WSL2 Docker
 
-# MCP tools
+# MCP 工具
 POIROT_MCP_ENABLED=true
 ```
 
-> **👉 For full configuration, commands, and troubleshooting — see the [Usage Guide](USAGE.md).**
+> **👉 完整配置、命令参考与故障排查，见[使用说明书](resource/USAGE.zh-CN.md)。**
 
 ---
 
-## Screenshots
+## 界面截图
 
 <div align="center">
 
 <img src="resource/assets/screenshot-tui-conversation.png" alt="Poirot TUI Conversation" width="880">
 
-<sub>TUI Conversation View — dual-panel layout with live context governance, sandbox status, and memory recall</sub>
+<sub>TUI 会话视图——双栏布局，含实时上下文治理、Sandbox 状态与记忆召回</sub>
 
 </div>
 
 ---
 
-## Tech Stack
+## 技术栈
 
 <div align="center">
 
@@ -207,37 +208,33 @@ POIROT_MCP_ENABLED=true
 
 ---
 
-## Acknowledgments
+## 致谢
 
-Poirot stands on the shoulders of giants. The architecture draws inspiration from several outstanding open-source projects and research frameworks:
+Poirot 站在巨人的肩膀上。其架构从若干优秀的开源项目与研究框架中获得启发：
 
-**Agent Architecture** — The middleware-first design and ReAct loop orchestration patterns are inspired by modern-based agent frameworks. The separation of concerns — where memory, skills, sandbox, and tool routing are pluggable cross-cutting middleware rather than embedded agent logic — builds upon ideas from conversational agent platforms that prioritize decoupled, testable architectures.
+**Agent 架构**——middleware 优先的设计与 ReAct 循环编排模式，受现代 Agent 框架启发。关注点分离——记忆、Skill、Sandbox、工具路由都是可插拔的横切 middleware，而非内嵌的 Agent 逻辑——建立在对解耦、可测架构有追求的对话式 Agent 平台之上。
 
-**Memory System** — The five-layer memory architecture (schema → strategies → store → middleware → auto-consolidation) is informed by cognitive science models of episodic, semantic, and procedural memory. The Ebbinghaus decay formula, lazy strength computation, and Markdown-as-truth-source patterns draw from long-term memory research in AI agent design. The "tools have no LLM" principle — where atomic operations are pure data transformations and LLM orchestration lives in the middleware layer — is inspired by memory framework designs that separate engine from orchestration.
+**记忆系统**——五层记忆架构（schema → strategies → store → middleware → auto-consolidation）受认知科学中情景记忆、语义记忆与程序性记忆模型的启发。艾宾浩斯衰减公式、惰性强度计算、Markdown 作为真源等模式，来自 AI Agent 设计中长期记忆的研究。「工具不含 LLM」原则——原子操作是纯数据变换，LLM 编排位于 middleware 层——受那些将引擎与编排分离的记忆框架设计启发。
 
-**Multi-Agent Orchestration** — The specialist delegation model (where Poirot delegates coding tasks to external CLI agents via MCP) and the shared-thread-sandbox concept build upon multi-agent collaboration patterns from coding agent ecosystems. The idea that a lead agent can orchestrate specialized sub-agents — each with their own LLM and toolset — while sharing a unified sandbox for artifact continuity, is informed by production multi-agent system designs.
+**多 Agent 编排**——专家委派模型（Poirot 通过 MCP 把编码任务委派给外部 CLI Agent）与共享 thread sandbox 概念，建立在编码 Agent 生态的多 Agent 协作模式之上。由主 Agent 编排各具 LLM 与工具集的专家子 Agent、同时共享统一沙箱以保持产物连续性的思路，受生产级多 Agent 系统设计启发。
 
-**Sandbox Isolation** — The three-component sandbox model (Runtime + PathTranslator + SecurityGuard) and the warm-pool lifecycle management are inspired by sandbox isolation patterns from deep research agent platforms. The Docker path translation and mount-area enforcement address real-world challenges of cross-platform (Windows + WSL2 + Docker) file persistence.
+**Sandbox 隔离**——三组件沙箱模型（Runtime + PathTranslator + SecurityGuard）与热池生命周期管理，受深度研究 Agent 平台的沙箱隔离模式启发。Docker 路径转换与挂载区强制，解决了跨平台（Windows + WSL2 + Docker）文件持久化的真实难题。
 
-**Skill Self-Evolution** — The three-layer skill architecture (base storage → LLM-driven evolution → multi-dimensional evaluation) with ratchet rollback and quality gating builds upon self-improving agent research. The concept of skills as "process knowledge bundles" (prompt-level injections, not executable functions) draws from prompt engineering and skill management frameworks.
+**Skill 自进化**——三层 Skill 架构（基础存储 → LLM 驱动进化 → 多维评估）配合棘轮回滚与质量把关，建立在自我改进 Agent 研究之上。把 Skill 视为「过程知识包」（提示词层注入，而非可执行函数）的概念，来自提示词工程与 Skill 管理框架。
 
-We gratefully acknowledge the developers and researchers of these projects whose work — whether through direct code patterns, architectural ideas, or research papers — made Poirot possible.
-
----
-
-## Provenance
-
-This repository is an independently maintained derivative of
-[HezaoHezao/poirot](https://github.com/HezaoHezao/poirot). The original Git history,
-the upstream author's attribution, and the [`LICENSE`](LICENSE) are preserved.
-
-Changes made here are documented under [`learn/`](learn/) and may not exist upstream.
-Bug reports and pull requests are welcome here; upstream-specific matters should go
-to the original project.
+谨向上述项目的开发者与研究者致谢——无论是直接的代码模式、架构思想还是研究论文，你们的工作让 Poirot 成为可能。
 
 ---
 
-## License
+## 来源说明
+
+本仓库是 [HezaoHezao/poirot](https://github.com/HezaoHezao/poirot) 的独立维护派生版本。原始 Git 历史、上游作者署名与 [`LICENSE`](LICENSE) 均已保留。
+
+本仓库的改动记录在 [`learn/`](learn/) 下，可能未同步到上游。欢迎在本仓库提交 issue 与 PR。
+
+---
+
+## 许可证
 
 [MIT](LICENSE) © Poirot Authors
 
@@ -245,7 +242,7 @@ to the original project.
 
 <div align="center">
 
-<sub>Built for those who care about how agents are built.</sub><br>
-<sub>If this project helps you, a ⭐ is appreciated.</sub>
+<sub>为关注 Agent 如何被构建的人而做。</sub><br>
+<sub>如果这个项目对你有帮助，欢迎点一个 ⭐</sub>
 
 </div>

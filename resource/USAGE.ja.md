@@ -2,7 +2,7 @@
 
 > Poirotのインストール、設定、操作の完全ガイド。
 >
-> **言語：** [English](../USAGE.md) · [简体中文](USAGE.zh-CN.md) · [日本語](USAGE.ja.md)
+> **言語：** [English](../USAGE.md) · [简体中文](USAGE.zh-CN.md) · [日本語](USAGE.ja.md) · [README](../README.md)
 
 ---
 
