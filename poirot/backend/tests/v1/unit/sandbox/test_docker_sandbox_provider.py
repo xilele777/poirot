@@ -461,6 +461,10 @@ class TestAcquireAsyncCancelSafety:
 
         # 释放锁，验证后续 acquire 正常
         lock.release()
+        # 若实现把 threading.Lock.acquire 放进 asyncio.to_thread，cancel 只会取消
+        # 协程侧的 await，底层线程仍在阻塞等待，并在锁释放后抢走它且无人 release。
+        # 留出足够时间让这种孤儿等待者有机会抢锁，使断言确定性地暴露该缺陷。
+        await asyncio.sleep(0.3)
         # 如果 cancel 路径误 release 了未持有的锁，这里 lock 状态会错乱
         # 验证 lock 仍可正常 acquire/release
         assert lock.acquire(blocking=False) is True

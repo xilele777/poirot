@@ -37,6 +37,9 @@ logger = logging.getLogger(__name__)
 _DEFAULT_IDLE_TIMEOUT = 600
 _DEFAULT_REPLICAS = 3
 _IDLE_CHECK_INTERVAL = 60
+# acquire_async 抢占 thread_lock 的轮询间隔（秒）。threading.Lock 无法异步等待，
+# 用短轮询换取可取消性，见 acquire_async 注释。
+_LOCK_POLL_INTERVAL = 0.05
 
 
 def _deterministic_sandbox_id(user_id: str | None, thread_id: str | None) -> str:
@@ -146,12 +149,15 @@ class DockerSandboxProvider(SandboxProvider):
             raise ValueError("thread_id is required")
         effective_user_id = user_id or "default"
         thread_lock = self._get_thread_lock(thread_id, effective_user_id)
-        # S5: acquire 必须在 try 块内——cancel 在 acquire 等待期间抛出时，
-        # finally 能正确判断是否已持有锁。acquired flag 避免 cancel-before-acquire
-        # 路径误 release（未持有的锁 release 会 RuntimeError）。
+        # 用非阻塞轮询而非 await asyncio.to_thread(thread_lock.acquire)：
+        # threading.Lock.acquire 是阻塞调用，放进 to_thread 后一旦 task 被 cancel，
+        # 底层线程仍会继续等待并在锁释放时抢到它，而 finally 因 acquired=False 不会
+        # release —— 锁被孤儿线程永久持有，该 thread_id 之后所有 acquire 死锁。
+        # 轮询把等待切成可取消的 await，cancel 后既不留孤儿等待者，也不误 release。
         acquired = False
         try:
-            await asyncio.to_thread(thread_lock.acquire)
+            while not thread_lock.acquire(blocking=False):
+                await asyncio.sleep(_LOCK_POLL_INTERVAL)
             acquired = True
             return await self._acquire_internal_async(thread_id, user_id=effective_user_id)
         finally:
