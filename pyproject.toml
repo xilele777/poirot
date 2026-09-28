@@ -54,3 +54,12 @@ providers = [
 dev = [
     "pytest>=7.4.4",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["poirot/backend/tests"]
+# 默认排除集成层（需真实 Docker / 真实 API key），保证"全量"是一条与宿主
+# 环境无关的纯净基线。完整门禁为叠加运行：pytest && pytest -m integration。
+addopts = "-m 'not integration'"
+markers = [
+    "integration: 需真实 Docker 守护进程或真实 LLM API key 的端到端测试",
+]

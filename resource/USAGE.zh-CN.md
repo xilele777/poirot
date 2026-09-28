@@ -775,7 +775,13 @@ A: 在 `skills/` 下创建子目录，含 `SKILL.md`（frontmatter + 正文）�
 
 A:
 ```bash
+# 全部单元/集成测试（集成层需 Docker 或真实 API key，默认排除，见 pyproject.toml）
 python -m pytest poirot/backend/tests/ -q
+
+# 仅集成层（无 Docker 守护进程 / API key 时自动跳过）
+python -m pytest poirot/backend/tests/ -q -m integration
+
+# 仅 Skill 模块
 python -m pytest poirot/backend/tests/v1/unit/skill/ -q
 ```
 

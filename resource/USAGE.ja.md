@@ -756,7 +756,13 @@ A: `skills/`下にサブディレクトリを作成し、`SKILL.md`（frontmatte
 
 A:
 ```bash
+# 全ユニット/統合テスト（統合層は Docker または実 API キーが必要なため既定で除外、pyproject.toml 参照）
 python -m pytest poirot/backend/tests/ -q
+
+# 統合層のみ（Docker デーモン / API キーが無い場合は自動スキップ）
+python -m pytest poirot/backend/tests/ -q -m integration
+
+# Skill モジュールのみ
 python -m pytest poirot/backend/tests/v1/unit/skill/ -q
 ```
 

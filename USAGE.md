@@ -977,8 +977,12 @@ A: Create a subdirectory under `skills/` with a `SKILL.md` (frontmatter + body).
 
 A:
 ```bash
-# All tests
+# All unit/integration tests (integration layer, which needs Docker or real
+# API keys, is excluded by default — see pyproject.toml)
 python -m pytest poirot/backend/tests/ -q
+
+# Integration layer only (skips when Docker daemon / API keys are absent)
+python -m pytest poirot/backend/tests/ -q -m integration
 
 # Skill module only
 python -m pytest poirot/backend/tests/v1/unit/skill/ -q

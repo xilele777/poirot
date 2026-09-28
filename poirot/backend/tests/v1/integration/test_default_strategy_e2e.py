@@ -3,23 +3,44 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
-
-try:
-    from dotenv import load_dotenv
-
-    load_dotenv()
-except ImportError:
-    pass
 
 langchain_deepseek = pytest.importorskip("langchain_deepseek")
 ChatDeepSeek = langchain_deepseek.ChatDeepSeek
 
-pytestmark = pytest.mark.skipif(
-    not os.getenv("DEEPSEEK_API_KEY"),
-    reason="需 DEEPSEEK_API_KEY",
-)
+
+def _read_env_file() -> dict[str, str]:
+    """只读取项目根 ``.env`` 到字典，**不**写入 ``os.environ``。
+
+    模块级 ``load_dotenv()`` 会在导入时把 .env 灌进进程环境，污染同进程内
+    后续测试文件（如 ``test_provider_config`` 对默认模型的断言）。这里改为
+    只读取值：跳过判定用文件里的值，真正需要环境变量时由用例在作用域内
+    经 ``monkeypatch`` 显式注入。
+    """
+    for parent in Path(__file__).resolve().parents:
+        env_file = parent / ".env"
+        if env_file.is_file():
+            try:
+                from dotenv import dotenv_values
+            except ImportError:
+                return {}
+            return {k: v for k, v in dotenv_values(env_file).items() if v is not None}
+    return {}
+
+
+_ENV_FILE = _read_env_file()
+_DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY") or _ENV_FILE.get("DEEPSEEK_API_KEY")
+_DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL") or _ENV_FILE.get("DEEPSEEK_BASE_URL")
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not _DEEPSEEK_API_KEY,
+        reason="需 DEEPSEEK_API_KEY",
+    ),
+]
 
 from langchain_core.messages import HumanMessage, RemoveMessage
 
@@ -33,8 +54,12 @@ from poirot.backend.agents.middlewares.tagged_context_middleware import (
 )
 
 
-def test_p4_summarize_real(tmp_path) -> None:
+def test_p4_summarize_real(tmp_path, monkeypatch) -> None:
     """P4 触发真实 deepseek summarize，产出 summary。"""
+    # 作用域内注入凭据，退出即还原；不作为模块级副作用污染其他测试文件。
+    monkeypatch.setenv("DEEPSEEK_API_KEY", _DEEPSEEK_API_KEY)
+    if _DEEPSEEK_BASE_URL:
+        monkeypatch.setenv("DEEPSEEK_BASE_URL", _DEEPSEEK_BASE_URL)
     model = ChatDeepSeek(model="deepseek-chat", temperature=0)
     strategy = DefaultStrategy(
         params={
