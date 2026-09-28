@@ -225,6 +225,18 @@ We gratefully acknowledge the developers and researchers of these projects whose
 
 ---
 
+## Provenance
+
+This repository is an independently maintained derivative of
+[HezaoHezao/poirot](https://github.com/HezaoHezao/poirot). The original Git history,
+the upstream author's attribution, and the [`LICENSE`](LICENSE) are preserved.
+
+Changes made here are documented under [`learn/`](learn/) and may not exist upstream.
+Bug reports and pull requests are welcome here; upstream-specific matters should go
+to the original project.
+
+---
+
 ## License
 
 [MIT](LICENSE) © Poirot Authors
