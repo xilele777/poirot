@@ -1,3 +1,5 @@
+> Current capability status / 当前能力状态：[2026-10-02](../docs/capabilities-and-limitations.md)。专家 L2/L3 自动进化与评估尚不可用；Skill 进化仅手动触发，自动回滚未接入。以下保留详细命令参考。
+
 # Poirot 使用说明书
 
 > Poirot 的完整安装、配置与操作指南。
@@ -295,7 +297,7 @@ Skill 是**研究过程知识 bundle**——prompt-level 注入，不是可执�
 - `IVEFocuser` — 5 问题诊断 + 偏差证据
 - `LLMMutator` — LLM 变异 skill 文本
 - `ScoreDeltaGate` — 变异前后评分门控
-- `GitRatchet` — 棘轮：退化时回滚
+- `GitRatchet` — 实验性回滚组件，尚未接入自动调度
 
 **Layer 3（评估层）：**
 - `SkillJudgmentAnalyzer` — per-skill per-task LLM 判断
@@ -755,7 +757,7 @@ A: Skill 是"研究过程知识"（know how），prompt 注入，不可执行。
 
 **Q: Skill 自进化会修改我的 skill 文件吗？**
 
-A: 会。Layer 2 启用后 `LLMMutator` 变异 skill 文本并创建新版本。`GitRatchet` 确保退化时回滚。`/skill history <name>` 查看历史。
+A: 可通过 `/skill evolve <name>` 手动触发并创建新版本；自动进化和自动回滚尚未接入应用调度。`/skill history <name>` 查看历史。
 
 **Q: 如何禁用高级功能做简单对话？**
 

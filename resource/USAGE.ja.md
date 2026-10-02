@@ -1,3 +1,5 @@
+> 現在の状態：[機能と制限](../docs/capabilities-and-limitations.md)。専門 Agent の L2/L3 進化は未提供です。Skill 進化は手動のみで、自動ロールバックは未接続です。以下はコマンドの詳細リファレンスです。
+
 # Poirot 使用ガイド
 
 > Poirotのインストール、設定、操作の完全ガイド。
@@ -294,7 +296,7 @@ Skillは**リサーチプロセス知識バンドル**です — promptレベル
 - `IVEFocuser` — 5問診断 + 偏差エビデンス
 - `LLMMutator` — LLMによるSkillテキスト変異
 - `ScoreDeltaGate` — 変異前後スコアゲート
-- `GitRatchet` — ラチェット：劣化時にロールバック
+- `GitRatchet` — 実験的なロールバック部品。自動実行は未接続。
 
 **Layer 3（評価）:**
 - `SkillJudgmentAnalyzer` — per-skill per-task LLM判定
@@ -736,7 +738,7 @@ A: Skillは「リサーチプロセス知識」（know how）— prompt注入、
 
 **Q: Skill進化はSkillファイルを変更しますか？**
 
-A: はい。Layer 2有効時、`LLMMutator`がSkillテキストを変異し新バージョンを作成します。`GitRatchet`が劣化時にロールバックします。`/skill history <name>`で履歴確認。
+A: `/skill evolve <name>` による手動実行で新バージョンを作成できます。自動進化と自動ロールバックは未接続です。履歴は `/skill history <name>` で確認できます。
 
 **Q: 高度な機能を全て無効にしてシンプルな会話をするには？**
 

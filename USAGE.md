@@ -1,3 +1,5 @@
+> Current status: [capabilities and limitations](docs/capabilities-and-limitations.md). Specialist L2/L3 evolution is unavailable; skill evolution is manual and automatic rollback is not connected. This document retains detailed command reference.
+
 # Poirot — Usage Guide
 
 > Complete guide for installing, configuring, and operating Poirot.
@@ -348,7 +350,7 @@ Skills are **research process knowledge bundles** — prompt-level injections, n
 - `IVEFocuser` — 5-question diagnosis + deviation evidence
 - `LLMMutator` — LLM-driven skill text variation
 - `ScoreDeltaGate` — pre/post mutation score gate
-- `GitRatchet` — ratchet: auto-rollback on degradation
+- `GitRatchet` — experimental rollback component; not scheduled by the application
 
 **Layer 3 (Eval):**
 - `SkillJudgmentAnalyzer` — per-skill per-task LLM judgment (applied + deviation)
@@ -397,11 +399,11 @@ Each `before_model` turn:
 
 ### Evolution
 
-When enabled, skills with persistently low `effective_rate` auto-trigger:
+Manual `/skill evolve <name>` runs the following pipeline; automatic threshold scheduling is not connected:
 1. `IVEFocuser` diagnoses weaknesses (5 questions)
 2. `LLMMutator` rewrites skill text
 3. `ScoreDeltaGate` ensures mutation scores higher than original
-4. `GitRatchet` auto-rollbacks on degradation
+4. `GitRatchet` is a separate experimental component; automatic rollback is not connected.
 
 Manual trigger: `/skill evolve <name>`
 
@@ -957,7 +959,7 @@ A: Skills are "research process knowledge" (know how) — prompt-level injection
 
 **Q: Will skill evolution modify my skill files?**
 
-A: Yes. When Layer 2 is enabled, `LLMMutator` varies skill text and creates new versions (version DAG). `GitRatchet` ensures auto-rollback on degradation. All changes are recorded in SQLite — `/skill history <name>` to view.
+A: Manual `/skill evolve <name>` can create a new version when enabled. Automatic evolution and rollback are not scheduled. Use `/skill history <name>` to review versions.
 
 **Q: How to disable all advanced features for simple chat?**
 
