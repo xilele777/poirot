@@ -4,7 +4,7 @@
 
 **当前状态：可在本地开发运行，正在进行可靠性和能力闭环收口。** 部分高级模块仍是实验组件，不代表已完成自动进化或生产部署验收。
 
-[English](resource/README.en.md) · [使用说明](resource/USAGE.zh-CN.md) · [能力与限制](docs/capabilities-and-limitations.md) · [开发与验证](docs/development.md)
+[English](resource/README.en.md) · [上手指南](docs/quick-start.md) · [当前限制清单](docs/known-limitations.md) · [使用说明](resource/USAGE.zh-CN.md) · [能力与限制](docs/capabilities-and-limitations.md) · [开发与验证](docs/development.md)
 
 ## 最短运行步骤
 
@@ -16,7 +16,9 @@ cd poirot
 python -m venv .venv
 .venv/Scripts/Activate.ps1
 pip install -e ".[dev]"
-Copy-Item .env.example .env
+if (-not (Test-Path -LiteralPath '.env')) {
+    Copy-Item -LiteralPath '.env.example' -Destination '.env'
+}
 ```
 
 编辑 `.env`，至少填写一个 provider 的 API key，例如 `DEEPSEEK_API_KEY`。随后启动：
@@ -27,7 +29,9 @@ poirot
 poirot cli
 ```
 
-Linux/macOS 使用 `source .venv/bin/activate` 和 `cp .env.example .env`。不要提交 `.env` 或真实运行数据。
+Linux/macOS 使用 `source .venv/bin/activate`，仅在 `.env` 不存在时执行 `cp .env.example .env`。已有配置不要覆盖；CLI 会用 `.env` 覆盖同名 shell 环境变量，空值也会覆盖。不要提交 `.env` 或真实运行数据。
+
+首次运行建议关闭 MultiAgent/MCP，显式指定一个 provider。完整的本机启动命令、首个任务和结果路径见[上手指南](docs/quick-start.md)。
 
 默认沙箱配置为空；需要文件工具时，在 `.env` 中显式选择本地开发模式：
 

@@ -1,5 +1,7 @@
 > Current capability status / 当前能力状态：[2026-10-02](../docs/capabilities-and-limitations.md)。专家 L2/L3 自动进化与评估尚不可用；Skill 进化仅手动触发，自动回滚未接入。以下保留详细命令参考。
 
+> 首次使用请先读[本地上手指南](../docs/quick-start.md)和[当前限制清单](../docs/known-limitations.md)。已有 `.env` 不要覆盖，以下历史场景示例不代表全部能力均已验收。
+
 # Poirot 使用说明书
 
 > Poirot 的完整安装、配置与操作指南。
@@ -408,8 +410,11 @@ Pi 支持多 provider — 你现有的 DeepSeek key 直接可用：
 
 ```env
 POIROT_MULTIAGENT_PI_PROVIDER=deepseek
-POIROT_MULTIAGENT_PI_API_KEYMiddleware.abefore_model 从 state["sandbox"] 恢复 ContextVar — 复用父 sandbox_id
-- **Specialist**：MCP 命令包含 `--sandbox-url` — specialist 通过 HTTP 连接 lead 的 Docker 容器
+# 复用已填写的 DEEPSEEK_API_KEY；如需独立凭证，可另填下项：
+# POIROT_MULTIAGENT_PI_API_KEY=
+```
+
+还需可用的 Pi CLI；凭证和实际委派结果应单独验证。外部专家共享沙箱的能力取决于运行方式与桥接配置，见[当前限制](../docs/known-limitations.md)。
 
 ---
 
@@ -702,7 +707,7 @@ POIROT_SANDBOX_WSL_DISTRO=Ubuntu
 ```
 
 **Sandbox 目录是空的？**
-- Agent 必须写到 `/mnt/poirot/user-data/`（挂载区）— DockerPathGuard 强制
+- 需要持久化和导出的文件应写到 `/mnt/poirot/user-data/` 下的配置映射；DockerPathGuard 不会全面约束脚本内部、变量展开等全部 shell 写入
 - 挂载区外的文件（如 `/tmp`）在容器销毁时丢失（`--rm`）
 - 查看 Windows host 上 `.poirot/sandbox/aio_docker/<sandbox_id>/` 的持久化文件
 - 查看 `.poirot/outputs/` 的提取产物（通过 `present_files` 工具）
