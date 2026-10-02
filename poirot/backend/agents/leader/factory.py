@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from langchain.agents import create_agent
+from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 
@@ -64,6 +65,7 @@ def _build_middlewares(
     memory_provider: Any = None,
     memory_config: Any = None,
     memory_worker: Any = None,
+    outputs_dir: str | None = None,
 ) -> list:
     """全模式全挂 middleware，参数化控制行为差异。
 
@@ -115,6 +117,7 @@ def _build_middlewares(
             provider=sandbox_provider,
             artifact_server=artifact_server,
             sandbox_root=sandbox_root,
+            outputs_dir=outputs_dir,
         ))
     # L4 Memory: Sandbox 后,HelpRequest/ToolCall 前(记忆引用 sandbox 结果,不进 tool pairing)
     if memory_provider is not None:
@@ -180,6 +183,7 @@ def make_lead_agent(
     memory_provider: Any = None,
     memory_config: Any = None,
     memory_worker: Any = None,
+    outputs_dir: str | None = None,
 ) -> Any:
     """App-layer factory: expert_flag 参数化装配 graph。
 
@@ -238,7 +242,7 @@ def make_lead_agent(
         graph=create_agent(
             model=model,
             tools=tools or None,
-            middleware=_build_middlewares(resolved_expert, model, context_governance, summarize_model, sandbox_provider, artifact_server, mcp_audit_middleware, skill_injection_middleware, skill_metrics_middleware, orchestration_middleware, memory_provider, memory_config, memory_worker),
+            middleware=_build_middlewares(resolved_expert, model, context_governance, summarize_model, sandbox_provider, artifact_server, mcp_audit_middleware, skill_injection_middleware, skill_metrics_middleware, orchestration_middleware, memory_provider, memory_config, memory_worker, outputs_dir),
             system_prompt=apply_prompt_template(
                 expert_mode=resolved_expert,
                 specialist_registry=_safe_get_specialist_registry(registry),

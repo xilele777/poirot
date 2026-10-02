@@ -9,6 +9,7 @@ capture_skill：手动 CAPTURED（/skill capture）。
 from __future__ import annotations
 
 import uuid
+import logging
 from typing import Any
 
 from poirot.backend.agents.journal.events import utc_now_iso
@@ -18,6 +19,8 @@ from poirot.backend.agents.skill.evolution.types import (
     EvolutionRecord,
 )
 from poirot.backend.agents.skill.types import SkillRecord
+
+logger = logging.getLogger(__name__)
 
 
 class EvolutionManager:
@@ -59,6 +62,10 @@ class EvolutionManager:
                 if ctx.target_skill is not None and hasattr(trigger, "mark_evolved"):
                     trigger.mark_evolved(ctx.target_skill.name, ctx.target_skill.total_selections)
         return records
+
+    def set_eval_bridge(self, bridge: Any) -> None:
+        """Replace the evaluator through an explicit assembly interface."""
+        self._eval_bridge = bridge
 
     def evolve_skill(self, skill_name: str) -> EvolutionRecord:
         """手动触发单 skill FIX 进化（/skill evolve）。"""
@@ -124,10 +131,11 @@ class EvolutionManager:
         created_id: str | None = None
         if decision.recommendation in ("accept", "accept_new_best"):
             parent_id = baseline.skill_id if baseline is not None else ""
-            try:
-                created_id = self._store.create_version(parent_id, candidate, candidate.lineage.origin)
-            except Exception:
-                created_id = None
+            # A gate acceptance is not a successful publication. Propagate persistence
+            # failures so the command cannot report an evolution that never happened.
+            created_id = self._store.create_version(parent_id, candidate, candidate.lineage.origin)
+            if not created_id:
+                raise RuntimeError("skill publication returned no version id")
         # 6. record
         rec = EvolutionRecord(
             evolution_id=f"evo_{uuid.uuid4().hex[:12]}",
@@ -143,10 +151,7 @@ class EvolutionManager:
             created_version_id=created_id,
             timestamp=utc_now_iso(),
         )
-        try:
-            self._store.record_evolution(rec)
-        except Exception:
-            pass
+        self._store.record_evolution(rec)
         # 7. journal
         if self._journal is not None:
             self._emit_journal(ctx, decision, rec)
@@ -156,7 +161,7 @@ class EvolutionManager:
         self, ctx: EvolutionContext, decision: Any, rec: EvolutionRecord,
     ) -> None:
         """journal 事件：skill.evolve / skill.captured / skill.evolve_rejected。"""
-        if ctx.evolution_type == "CAPTURED":
+        if ctx.evolution_type == "CAPTURED" and rec.created_version_id:
             event_type = "skill.captured"
         elif decision.recommendation in ("accept", "accept_new_best"):
             event_type = "skill.evolve"
@@ -172,4 +177,4 @@ class EvolutionManager:
                 "created_version_id": rec.created_version_id,
             })
         except Exception:
-            pass
+            logger.warning("Could not write skill evolution journal", exc_info=True)

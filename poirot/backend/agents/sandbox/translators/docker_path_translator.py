@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from poirot.backend.agents.sandbox.utils.paths import contained_path, virtual_relative
 
 _VIRTUAL_PREFIX = "/mnt/poirot/user-data"
 
@@ -36,9 +37,7 @@ class DockerPathTranslator:
         非 /mnt/poirot/user-data(精确匹配或带 /)前缀抛 ValueError。
         输出统一正斜杠(shutil.copy2 在 Windows 上兼容两种分隔符)。
         """
-        if virtual_path != _VIRTUAL_PREFIX and not virtual_path.startswith(
-            _VIRTUAL_PREFIX + "/"
-        ):
-            raise ValueError(f"path not under {_VIRTUAL_PREFIX}: {virtual_path}")
-        relative = virtual_path[len(_VIRTUAL_PREFIX):].lstrip("/")
-        return f"{self._host_root}/{relative}" if relative else self._host_root
+        relative = virtual_relative(virtual_path, allow_root=True)
+        if not relative:
+            return str(Path(self._host_root).resolve()).replace("\\", "/")
+        return str(contained_path(Path(self._host_root), relative)).replace("\\", "/")

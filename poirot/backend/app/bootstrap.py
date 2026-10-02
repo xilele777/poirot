@@ -30,7 +30,7 @@ from poirot.backend.agents.reporting.markdown_reporter import MarkdownReporter
 from poirot.backend.agents.runtime.run_manager import RunManager
 from poirot.backend.agents.agent_tools.available import get_available_tools, select_search_tool
 from poirot.backend.agents.multiagent.bootstrap import MultiAgentSetup, setup_multiagent
-from poirot.backend.agents.multiagent.config import load_multiagent_config
+from poirot.backend.agents.multiagent.config import load_multiagent_config, validate_runtime_config
 
 _PROJECT_ROOT = Path(__file__).parents[3]
 _CST = timezone(timedelta(hours=8))
@@ -147,20 +147,9 @@ class AppRuntime:
         # 必须传 context_governance——否则 _build_middlewares 看到 None 会跳过整个
         # 治理层（StrategyMiddleware 不挂），切换 expert 后 budget/fraction/压缩全部失效，
         # 与 D12 "minimal 未注册" 故障现象相同。
-        new_leader = make_lead_agent(
-            expert_mode=expert_mode,
-            capability_registry=self.capability_registry,
-            context_governance=new_config.context_governance,
-            sandbox_provider=getattr(self.capability_registry, "sandbox_provider", None),
-            artifact_server=self.artifact_server,
-            mcp_audit_middleware=self.mcp_manager.get_audit_middleware() if self.mcp_manager else None,
-            skill_injection_middleware=self.skill_manager.get_injection_middleware() if self.skill_manager else None,
-            skill_metrics_middleware=self.skill_manager.get_metrics_middleware() if self.skill_manager else None,
-            specialist_tools=list(self.multiagent_setup.specialist_tools) if self.multiagent_setup else None,
-            orchestration_middleware=self.multiagent_setup.orchestration_middleware if self.multiagent_setup else None,
-            memory_provider=getattr(self.capability_registry, "memory_provider", None),
-            memory_config=self.config.memory,
-            memory_worker=get_memory_worker(),
+        new_leader = _assemble_leader(
+            new_config, self.capability_registry, self.artifact_server,
+            self.mcp_manager, self.skill_manager, self.multiagent_setup,
         )
         self.thread_journal.append("mode.switched", {
             "expert_mode": expert_mode,
@@ -188,21 +177,9 @@ class AppRuntime:
         thread_dir / thread_journal / capability_registry，checkpointer state 跨重建连续。
         同步完成（<1s），下轮可用（当前轮用旧 graph 跑完）。
         """
-        expert_mode = self.config.runtime.expert_mode if hasattr(self.config.runtime, "expert_mode") else False
-        new_leader = make_lead_agent(
-            expert_mode=expert_mode,
-            capability_registry=self.capability_registry,
-            context_governance=self.config.context_governance,
-            sandbox_provider=getattr(self.capability_registry, "sandbox_provider", None),
-            artifact_server=self.artifact_server,
-            mcp_audit_middleware=self.mcp_manager.get_audit_middleware() if self.mcp_manager else None,
-            skill_injection_middleware=self.skill_manager.get_injection_middleware() if self.skill_manager else None,
-            skill_metrics_middleware=self.skill_manager.get_metrics_middleware() if self.skill_manager else None,
-            specialist_tools=list(self.multiagent_setup.specialist_tools) if self.multiagent_setup else None,
-            orchestration_middleware=self.multiagent_setup.orchestration_middleware if self.multiagent_setup else None,
-            memory_provider=getattr(self.capability_registry, "memory_provider", None),
-            memory_config=self.config.memory,
-            memory_worker=get_memory_worker(),
+        new_leader = _assemble_leader(
+            self.config, self.capability_registry, self.artifact_server,
+            self.mcp_manager, self.skill_manager, self.multiagent_setup,
         )
         self.thread_journal.append("mcp.tools_reloaded", {"thread_id": self.thread_id})
         return AppRuntime(
@@ -247,21 +224,9 @@ class AppRuntime:
             subagent_provider=self.capability_registry.subagent_provider,
             memory_provider=self.capability_registry.memory_provider,
         )
-        expert_mode = self.config.runtime.expert_mode
-        new_leader = make_lead_agent(
-            expert_mode=expert_mode,
-            capability_registry=new_registry,
-            context_governance=self.config.context_governance,
-            sandbox_provider=getattr(new_registry, "sandbox_provider", None),
-            artifact_server=self.artifact_server,
-            mcp_audit_middleware=self.mcp_manager.get_audit_middleware() if self.mcp_manager else None,
-            skill_injection_middleware=self.skill_manager.get_injection_middleware() if self.skill_manager else None,
-            skill_metrics_middleware=self.skill_manager.get_metrics_middleware() if self.skill_manager else None,
-            specialist_tools=list(self.multiagent_setup.specialist_tools) if self.multiagent_setup else None,
-            orchestration_middleware=self.multiagent_setup.orchestration_middleware if self.multiagent_setup else None,
-            memory_provider=getattr(self.capability_registry, "memory_provider", None),
-            memory_config=self.config.memory,
-            memory_worker=get_memory_worker(),
+        new_leader = _assemble_leader(
+            self.config, new_registry, self.artifact_server,
+            self.mcp_manager, self.skill_manager, self.multiagent_setup,
         )
         self.thread_journal.append("model.switched", {
             "provider": provider,
@@ -282,6 +247,37 @@ class AppRuntime:
             skill_manager=self.skill_manager,
             multiagent_setup=self.multiagent_setup,
         )
+
+
+
+def _assemble_leader(
+    config: AppConfig,
+    registry: CapabilityRegistry,
+    artifact_server: Any = None,
+    mcp_manager: Any = None,
+    skill_manager: Any = None,
+    multiagent_setup: MultiAgentSetup | None = None,
+) -> LeaderAgent:
+    """One assembly path for startup, leaf agents and runtime reloads.
+
+    Omitting multiagent_setup produces a leaf without delegation tools.
+    """
+    return make_lead_agent(
+        expert_mode=config.runtime.expert_mode,
+        capability_registry=registry,
+        context_governance=config.context_governance,
+        sandbox_provider=getattr(registry, "sandbox_provider", None),
+        artifact_server=artifact_server,
+        outputs_dir=str(_PROJECT_ROOT / ".poirot" / "outputs"),
+        mcp_audit_middleware=mcp_manager.get_audit_middleware() if mcp_manager else None,
+        skill_injection_middleware=skill_manager.get_injection_middleware() if skill_manager else None,
+        skill_metrics_middleware=skill_manager.get_metrics_middleware() if skill_manager else None,
+        specialist_tools=list(multiagent_setup.specialist_tools) if multiagent_setup else None,
+        orchestration_middleware=multiagent_setup.orchestration_middleware if multiagent_setup else None,
+        memory_provider=getattr(registry, "memory_provider", None),
+        memory_config=config.memory,
+        memory_worker=get_memory_worker(),
+    )
 
 
 def _load_sandbox_provider(config: AppConfig) -> Any:
@@ -402,7 +398,7 @@ def _build_eval_layer(skill_manager: Any, llm: Any) -> Any:
     # 替换 EvolutionManager 的 eval_bridge（若已装配）
     evo = skill_manager.get_evolution_manager()
     if evo is not None:
-        evo._eval_bridge = bridge
+        evo.set_eval_bridge(bridge)
 
     return EvalLayer(
         bridge=bridge,
@@ -418,6 +414,8 @@ def bootstrap_runtime(
     model: str | None = None,
     cli_overrides: dict[str, Any] | None = None,
 ) -> AppRuntime:
+    ma_config = load_multiagent_config()
+    validate_runtime_config(ma_config)
     config = load_config(expert_mode=expert_mode, cli_overrides=cli_overrides)
     logs_root = Path(config.runtime.logs_root)
     if not logs_root.is_absolute():
@@ -477,7 +475,6 @@ def bootstrap_runtime(
     thread_journal.append("builtin.tools_loaded", {"tools": list(tools.keys())})
 
     mcp_manager = None
-    mcp_audit_middleware = None
     if _check_node_available():
         try:
             from poirot.backend.agents.mcp import build_mcp_manager
@@ -499,7 +496,6 @@ def bootstrap_runtime(
                 search_tool = select_search_tool(mcp_tools)
                 if search_tool:
                     tools["web_search_mcp"] = search_tool
-                mcp_audit_middleware = mcp_manager.get_audit_middleware()
                 # 注入 tool_metadata 到 context_governance.params，供外化层按工具调阈值
                 tool_metadata = mcp_manager.registry.get_all_metadata()
                 if tool_metadata:
@@ -546,16 +542,12 @@ def bootstrap_runtime(
 
     # Skill 模块加载 — build_skill_manager 读 .env，enabled=false 或无目录返 None。
     skill_manager = None
-    skill_injection_middleware = None
-    skill_metrics_middleware = None
     try:
         from poirot.backend.agents.skill import build_skill_manager
 
         skill_manager = build_skill_manager()
         if skill_manager is not None:
             skill_manager.load_startup(llm=researcher_model)
-            skill_injection_middleware = skill_manager.get_injection_middleware()
-            skill_metrics_middleware = skill_manager.get_metrics_middleware()
             thread_journal.append("skill.loaded", {
                 "skills": [s["name"] for s in skill_manager.list_skills()],
             })
@@ -585,7 +577,6 @@ def bootstrap_runtime(
     all_tools = {**tools, **{t.name: t for t in sandbox_tools}}
 
     # Multi-Agent orchestration 装配 — enabled=false 时返空 setup（lead agent 行为不变）
-    ma_config = load_multiagent_config()
 
     # Bug A 修复：注入 agent_factory 让 SubagentRuntime 可用（设计文档 46 §4.1）
     # _subagent_factory 构造 leaf-role lead agent（复用 lead agent 构造，但 leaf 不能再 delegate）。
@@ -598,21 +589,7 @@ def bootstrap_runtime(
         - orchestration_middleware=None（leaf 不挂 OrchestrationMiddleware）
         这些限制让子 agent 无法递归 spawn（INVARIANT：max_spawn_depth=1 leaf-only MVP）。
         """
-        return make_lead_agent(
-            expert_mode=expert_mode,
-            capability_registry=registry,
-            context_governance=config.context_governance,
-            sandbox_provider=sandbox_provider,
-            artifact_server=artifact_server,
-            mcp_audit_middleware=mcp_audit_middleware,
-            skill_injection_middleware=skill_injection_middleware,
-            skill_metrics_middleware=skill_metrics_middleware,
-            specialist_tools=None,              # leaf 不能再 delegate
-            orchestration_middleware=None,     # leaf 不挂 OrchestrationMiddleware
-            memory_provider=memory_provider,
-            memory_config=config.memory,
-            memory_worker=get_memory_worker(),
-        )
+        return _assemble_leader(config, registry, artifact_server, mcp_manager, skill_manager)
 
     ma_setup = setup_multiagent(
         ma_config,
@@ -638,20 +615,8 @@ def bootstrap_runtime(
         subagent_provider=ma_setup.subagent_provider,
         memory_provider=memory_provider,
     )
-    leader_agent = make_lead_agent(
-        expert_mode=expert_mode,
-        capability_registry=registry,
-        context_governance=config.context_governance,
-        sandbox_provider=sandbox_provider,
-        artifact_server=artifact_server,
-        mcp_audit_middleware=mcp_audit_middleware,
-        skill_injection_middleware=skill_injection_middleware,
-        skill_metrics_middleware=skill_metrics_middleware,
-        specialist_tools=list(ma_setup.specialist_tools) if ma_setup.specialist_tools else None,
-        orchestration_middleware=ma_setup.orchestration_middleware,
-        memory_provider=memory_provider,
-        memory_config=config.memory,
-        memory_worker=memory_worker,
+    leader_agent = _assemble_leader(
+        config, registry, artifact_server, mcp_manager, skill_manager, ma_setup,
     )
     thread_journal.append("agent.constructed", {
         "expert_mode": expert_mode,

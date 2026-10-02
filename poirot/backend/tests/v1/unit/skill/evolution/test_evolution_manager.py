@@ -120,6 +120,23 @@ def _mgr(store, trigger, gate_decision, candidate=None, eval_score=0.8, journal=
     )
 
 
+@pytest.mark.parametrize("failure", ["create_version", "record_evolution"])
+def test_persistence_failure_does_not_report_success(monkeypatch, failure):
+    baseline = _rec()
+    ctx = EvolutionContext(trigger="METRIC", evolution_type="FIX", target_skill=baseline)
+    store = _FakeStore({"sv": baseline})
+    journal = _FakeJournal()
+    manager = _mgr(store, _FakeTrigger([ctx]), GateDecision("accept", "ok"), journal=journal)
+
+    def fail(*args):
+        raise OSError("disk unavailable")
+
+    monkeypatch.setattr(store, failure, fail)
+    with pytest.raises(OSError, match="disk unavailable"):
+        manager.evolve_skill("sv")
+    assert journal.events == []
+
+
 # ── run_cycle accept ────────────────────────────────────
 
 

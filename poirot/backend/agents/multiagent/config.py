@@ -12,6 +12,17 @@ import os
 from dataclasses import dataclass, field
 
 
+def validate_runtime_config(config: MultiAgentConfig) -> None:
+    """Reject opt-ins that cannot be fulfilled by the application assembly."""
+    if config.enabled and (config.l2.enabled or config.l3.enabled):
+        raise ValueError(
+            "Multi-agent automatic evolution/evaluation is not available: "
+            "the application has no configured mutation caller or task evaluator. "
+            "Disable POIROT_MULTIAGENT_L2_ENABLED and POIROT_MULTIAGENT_L3_ENABLED; "
+            "ordinary specialist delegation remains available."
+        )
+
+
 @dataclass(frozen=True)
 class L2Config:
     """L2 evolution layer config (R4 + R6 + R7).

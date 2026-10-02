@@ -113,7 +113,7 @@ def test_setup_l2_worker_start_stop(metrics_store):
 # -- setup_multiagent integration (L2 enabled=true) -------------------------
 
 
-def test_setup_multiagent_l2_enabled_starts_daemon(tmp_path):
+def test_setup_multiagent_l2_enabled_rejects_missing_dependencies(tmp_path):
     """setup_multiagent with l2.enabled=true."""
     from poirot.backend.agents.multiagent.bootstrap import setup_multiagent
     from poirot.backend.agents.multiagent.config import MultiAgentConfig
@@ -127,11 +127,9 @@ def test_setup_multiagent_l2_enabled_starts_daemon(tmp_path):
         metrics_db_path=str(tmp_path / "test_setup.db"),
     )
 
-    setup = setup_multiagent(config, agent_factory=lambda: None)
-    assert setup.l2_setup is not None
-    assert setup.l2_setup.worker.is_running
-    # Cleanup
-    setup.l2_setup.worker.stop()
+    with pytest.raises(ValueError, match="no configured mutation caller"):
+        setup_multiagent(config, agent_factory=lambda: None)
+    assert not (tmp_path / "test_setup.db").exists()
 
 
 def test_setup_multiagent_l2_disabled_no_daemon(tmp_path):

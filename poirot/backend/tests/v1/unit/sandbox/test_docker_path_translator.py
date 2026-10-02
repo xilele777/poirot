@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from pathlib import Path
 
 from poirot.backend.agents.sandbox.contracts import PathTranslator
 from poirot.backend.agents.sandbox.translators.docker_path_translator import (
@@ -33,31 +34,31 @@ class TestDockerPathTranslator:
     def test_reverse_translate_nested_path(self) -> None:
         translator = DockerPathTranslator("/data/aio_docker", "abc123")
         result = translator.reverse_translate("/mnt/poirot/user-data/outputs/foo.txt")
-        assert result == "/data/aio_docker/abc123/outputs/foo.txt"
+        assert result == str(Path("/data/aio_docker/abc123/outputs/foo.txt").resolve()).replace("\\", "/")
 
     def test_reverse_translate_prefix_only(self) -> None:
         translator = DockerPathTranslator("/data/aio_docker", "abc123")
         result = translator.reverse_translate("/mnt/poirot/user-data")
-        assert result == "/data/aio_docker/abc123"
+        assert result == str(Path("/data/aio_docker/abc123").resolve()).replace("\\", "/")
 
     def test_reverse_translate_prefix_with_trailing_slash(self) -> None:
         translator = DockerPathTranslator("/data/aio_docker", "abc123")
         result = translator.reverse_translate("/mnt/poirot/user-data/")
-        assert result == "/data/aio_docker/abc123"
+        assert result == str(Path("/data/aio_docker/abc123").resolve()).replace("\\", "/")
 
     def test_reverse_translate_single_segment(self) -> None:
         translator = DockerPathTranslator("/data/aio_docker", "abc123")
         result = translator.reverse_translate("/mnt/poirot/user-data/foo")
-        assert result == "/data/aio_docker/abc123/foo"
+        assert result == str(Path("/data/aio_docker/abc123/foo").resolve()).replace("\\", "/")
 
     def test_reverse_translate_non_prefix_raises(self) -> None:
         translator = DockerPathTranslator("/data/aio_docker", "abc123")
-        with pytest.raises(ValueError, match="path not under"):
+        with pytest.raises(ValueError, match="path must be under"):
             translator.reverse_translate("/tmp/foo")
 
     def test_reverse_translate_partial_prefix_raises(self) -> None:
         translator = DockerPathTranslator("/data/aio_docker", "abc123")
-        with pytest.raises(ValueError, match="path not under"):
+        with pytest.raises(ValueError, match="path must be under"):
             translator.reverse_translate("/mnt/poirot/user-data-extra/foo")
 
     def test_reverse_translate_windows_root(self) -> None:
@@ -71,11 +72,11 @@ class TestDockerPathTranslator:
 
         translator = DockerPathTranslator(Path("/data/aio_docker"), "abc123")
         result = translator.reverse_translate("/mnt/poirot/user-data/foo")
-        assert result == "/data/aio_docker/abc123/foo"
+        assert result == str(Path("/data/aio_docker/abc123/foo").resolve()).replace("\\", "/")
 
     def test_reverse_translate_deep_nested(self) -> None:
         translator = DockerPathTranslator("/data/aio_docker", "abc123")
         result = translator.reverse_translate(
             "/mnt/poirot/user-data/workspace/project/src/main.py"
         )
-        assert result == "/data/aio_docker/abc123/workspace/project/src/main.py"
+        assert result == str(Path("/data/aio_docker/abc123/workspace/project/src/main.py").resolve()).replace("\\", "/")

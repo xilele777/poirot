@@ -3,9 +3,10 @@ from __future__ import annotations
 import re
 
 from poirot.backend.agents.sandbox.exceptions import SandboxPermissionError
+from poirot.backend.agents.sandbox.utils.paths import virtual_relative
 
 _VIRTUAL_PREFIX = "/mnt/poirot/user-data/"
-_REDIRECT_PATTERN = re.compile(r'>{1,2}\s*(/[^\s;|&]*)')
+_REDIRECT_PATTERN = re.compile(r'''>{1,2}\s*(?:"(/[^"\n]*)"|'(/[^'\n]*)'|(/[^\s;|&]*))''')
 
 
 class DockerPathGuard:
@@ -25,19 +26,22 @@ class DockerPathGuard:
     def validate_path(self, path: str, *, write: bool = False) -> None:
         if not write:
             return
-        if not path.startswith(_VIRTUAL_PREFIX):
+        try:
+            virtual_relative(path)
+        except ValueError as exc:
             raise SandboxPermissionError(
                 f"write path must be under {_VIRTUAL_PREFIX}: {path}",
                 path=path,
                 operation="validate",
-            )
+            ) from exc
 
     def validate_command(self, command: str) -> None:
         for match in _REDIRECT_PATTERN.finditer(command):
-            target = match.group(1)
-            if not target.startswith(_VIRTUAL_PREFIX):
+            target = next(group for group in match.groups() if group is not None)
+            try:
+                self.validate_path(target, write=True)
+            except SandboxPermissionError as exc:
                 raise SandboxPermissionError(
-                    f"bash redirect target must be under {_VIRTUAL_PREFIX}: {target}",
-                    path=target,
-                    operation="validate_command",
-                )
+                    f"bash redirect target is invalid: {target}",
+                    path=target, operation="validate_command",
+                ) from exc

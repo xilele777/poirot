@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import shutil
+from pathlib import Path
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -13,11 +15,12 @@ from langgraph.types import Command
 from poirot.backend.agents.agent_tools.available import SANDBOX_TOOL_NAMES
 from poirot.backend.agents.artifacts.server import ArtifactServer
 from poirot.backend.agents.sandbox.contracts import SandboxProvider
+from poirot.backend.agents.sandbox.exceptions import SandboxRuntimeError
+from poirot.backend.agents.sandbox.utils.paths import contained_path, virtual_relative
 from poirot.backend.agents.sandbox.integration.context import (
     get_sandbox_id,
     set_sandbox_id,
 )
-from poirot.backend.agents.state.types import Artifact
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +34,7 @@ class SandboxMiddleware(AgentMiddleware):
     - lazy_init 硬编码 True：无 before_agent，sandbox 工具被调用时 acquire
     - abefore_model：从 state["sandbox"] 恢复 ContextVar（subagent 共享父 sandbox_id，块 D1）
     - awrap_tool_call：sandbox 工具首次调用时 acquire + set_sandbox_id + Command 持久化
-    - present_files 调用后：把 virtual path 写入 state.artifacts + 向 ArtifactServer 注册
+    - present_files 调用后：验证路径、复制成功后向 ArtifactServer 注册
     - aafter_agent release：release 不销毁（LocalSandboxProvider no-op）
     - Sandbox 在中间件列表外层；ToolCall 在内层 catch SandboxError（Grill #9）
     - 非 sandbox 工具（web_search 等）不触发 acquire
@@ -42,10 +45,12 @@ class SandboxMiddleware(AgentMiddleware):
         provider: SandboxProvider,
         artifact_server: ArtifactServer | None = None,
         sandbox_root: str | None = None,
+        outputs_dir: str | Path | None = None,
     ) -> None:
         self._provider = provider
         self._artifact_server = artifact_server
         self._sandbox_root = sandbox_root
+        self._outputs_dir = Path(outputs_dir) if outputs_dir is not None else Path.cwd() / ".poirot" / "outputs"
 
     async def abefore_model(
         self, state: dict[str, Any], runtime: Runtime
@@ -125,73 +130,31 @@ class SandboxMiddleware(AgentMiddleware):
         return result
 
     def _register_artifacts(self, request: ToolCallRequest, sandbox_id: str) -> list[str]:
-        """Extract virtual paths from present_files args, copy to .poirot/outputs/, register to server.
-
-        借鉴 deer-flow：deer-flow 用 router 从原位置 serve；Poirot CLI 场景更适合
-        复制到固定目录 .poirot/outputs/——用户总知道去哪里找产出物，任何格式都支持。
-        同时注册到 ArtifactServer 供 HTTP 下载。
-        """
-        import shutil
-        from pathlib import Path
-
-        from poirot.backend.app.bootstrap import _PROJECT_ROOT
-
+        """Copy validated files; publish a URL only after a successful copy."""
         args = request.tool_call.get("args", {})
-        if isinstance(args, dict):
-            paths = args.get("paths", [])
-        elif isinstance(args, str):
-            paths = []
-        else:
-            paths = args if isinstance(args, list) else []
-
-        # 获取 sandbox 对象用于解析 host 路径
+        paths = args.get("paths", []) if isinstance(args, dict) else []
+        if not isinstance(paths, list):
+            return []
         sandbox = self._provider.get(sandbox_id)
-        outputs_dir = _PROJECT_ROOT / ".poirot" / "outputs"
-        outputs_dir.mkdir(parents=True, exist_ok=True)
-
+        if sandbox is None:
+            logger.warning("Cannot export artifacts: sandbox unavailable")
+            return []
         urls: list[str] = []
-        for vp in paths:
-            if not isinstance(vp, str) or not vp.startswith(_VIRTUAL_PREFIX):
-                logger.warning(
-                    f"present_files: skipping '{vp}' — must be under {_VIRTUAL_PREFIX}"
-                )
-                continue
-            filename = vp[len(_VIRTUAL_PREFIX):].lstrip("/")
-
-            # 1. 解析 host 路径（通过 sandbox translator）
+        for virtual_path in paths:
             try:
-                if sandbox is not None:
-                    host_path = sandbox.get_host_path(vp)
-                else:
-                    host_path = f"{self._sandbox_root}/{sandbox_id}/{filename}" if self._sandbox_root else None
-            except Exception as exc:
-                logger.warning(f"present_files: failed to resolve host path for '{vp}': {exc}")
-                host_path = f"{self._sandbox_root}/{sandbox_id}/{filename}" if self._sandbox_root else None
-
-            if not host_path:
-                continue
-
-            # 2. 复制到 .poirot/outputs/（固定产出物目录）
-            dest = outputs_dir / filename
-            try:
+                relative = virtual_relative(virtual_path)
+                # Translators validate the configured source mapping, including symlinks.
+                source = Path(sandbox.get_host_path(virtual_path)).resolve(strict=True)
+                if not source.is_file():
+                    raise ValueError("artifact is not a regular file")
+                dest = contained_path(self._outputs_dir, relative)
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(host_path, dest)
-                logger.info(f"Artifact copied: {host_path} → {dest}")
-            except Exception as exc:
-                logger.warning(f"present_files: copy failed '{host_path}' → '{dest}': {exc}")
-
-            # 3. 注册到 ArtifactServer（供 HTTP 下载）
-            if self._artifact_server is not None:
-                url = self._artifact_server.register(sandbox_id, filename, str(dest))
-                urls.append(url)
-                logger.info(f"Artifact registered: {url}")
-
-            # 4. 同时注册原始 host_path（如复制失败，至少原始路径可下载）
-            if self._artifact_server is not None and not dest.exists() and Path(host_path).exists():
-                url = self._artifact_server.register(sandbox_id, filename, host_path)
-                if url not in urls:
-                    urls.append(url)
-
+                if source != dest:
+                    shutil.copy2(source, dest)
+                if self._artifact_server is not None:
+                    urls.append(self._artifact_server.register(sandbox_id, relative, str(dest)))
+            except (OSError, ValueError, TypeError) as exc:
+                logger.warning("Artifact export rejected for %r: %s", virtual_path, exc)
         return urls
 
     async def aafter_agent(

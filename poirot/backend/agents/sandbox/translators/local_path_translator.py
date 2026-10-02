@@ -5,6 +5,7 @@ from functools import cached_property
 from pathlib import Path
 
 from poirot.backend.agents.sandbox.types import PathMapping, ResolvedPath
+from poirot.backend.agents.sandbox.utils.paths import virtual_relative
 
 
 class LocalPathTranslator:
@@ -82,6 +83,14 @@ class LocalPathTranslator:
 
     def translate_path(self, virtual_path: str) -> str:
         return self._resolve_path_with_mapping(virtual_path).path
+
+    def reverse_translate(self, virtual_path: str) -> str:
+        """Export only files from an explicitly configured user-data mapping."""
+        virtual_relative(virtual_path, allow_root=True)
+        resolved = self._resolve_path_with_mapping(virtual_path)
+        if resolved.mapping is None:
+            raise ValueError("artifact path has no configured host mapping")
+        return resolved.path
 
     def translate_command(self, command: str) -> str:
         if self._command_pattern is None:

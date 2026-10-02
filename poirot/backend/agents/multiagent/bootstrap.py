@@ -233,6 +233,8 @@ def setup_multiagent(
     enabled=false → 返空 setup（lead agent 行为不变）。
     enabled=true → 反射加载 specialist + 凭证检测 + metrics + middleware + tools。
     """
+    from poirot.backend.agents.multiagent.config import validate_runtime_config
+    validate_runtime_config(config)
     if not config.enabled:
         return _EMPTY_SETUP
 
