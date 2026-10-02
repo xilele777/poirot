@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 from typing import Any, AsyncIterator
 
+import pytest
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+
 from poirot.backend.app.services.stream_service import PoirotStreamClient
 
 
@@ -218,3 +221,139 @@ def test_answer_starting_with_brace_not_selector() -> None:
     answers = [e for e in events if e["type"] == "answer"]
     combined = "".join(e["content"] or "" for e in answers)
     assert "x" * 250 in combined
+
+
+@pytest.mark.parametrize("final_mode", ["values", "messages"])
+@pytest.mark.parametrize("answer", ["Hello world", '{"result": "ok"}'])
+def test_response_id_and_chunk_id_share_one_answer(final_mode, answer) -> None:
+    """Responses starts with its provider ID, then streams using a LangChain ID."""
+    metadata = {"langgraph_checkpoint_ns": "model:call-1", "langgraph_step": 3}
+    final = AIMessage(content=answer, id="resp-1")
+    chunks = [
+        ("values", {"messages": [HumanMessage(content="Q", id="human-1")]}),
+        ("messages", (AIMessageChunk(content=[], id="resp-1", response_metadata={"id": "resp-1"}), metadata)),
+        ("messages", (AIMessageChunk(content=[{"type": "text", "text": answer[:5]}], id="lc-run-1"), metadata)),
+        ("messages", (AIMessageChunk(content=[{"type": "text", "text": answer[5:]}], id="lc-run-1"), metadata)),
+        (final_mode, {"messages": [final]} if final_mode == "values" else (final, metadata)),
+        ("values", {"messages": [final]}),
+    ]
+    events = asyncio.run(_drain(PoirotStreamClient(_FakeGraph(chunks), {}).stream("Q")))
+    assert "".join(e["content"] for e in events if e["type"] == "answer") == answer
+
+
+@pytest.mark.parametrize("initial", ["empty", "reasoning"])
+def test_non_answer_chunks_do_not_hide_final_answer(initial) -> None:
+    chunk = AIMessageChunk(
+        content="", id="response-1",
+        additional_kwargs={"reasoning_content": "Thinking"} if initial == "reasoning" else {},
+        response_metadata={"id": "response-1"},
+    )
+    graph = _FakeGraph([
+        ("values", {"messages": []}),
+        ("messages", (chunk, {"langgraph_checkpoint_ns": "model:call-1"})),
+        ("values", {"messages": [AIMessage(content="Final answer", id="response-1")]}),
+    ])
+    events = asyncio.run(_drain(PoirotStreamClient(graph, {}).stream("Q")))
+    assert "".join(e["content"] for e in events if e["type"] == "answer") == "Final answer"
+
+
+def test_same_text_from_separate_model_calls_is_not_deduplicated() -> None:
+    chunks = [("values", {"messages": []})]
+    for index in (1, 2):
+        metadata = {"langgraph_checkpoint_ns": f"model:call-{index}", "langgraph_step": index}
+        response_id = f"resp-{index}"
+        chunks.extend([
+            ("messages", (AIMessageChunk(content="", id=response_id, response_metadata={"id": response_id}), metadata)),
+            ("messages", (AIMessageChunk(content="Again", id=f"lc-run-{index}"), metadata)),
+            ("values", {"messages": [AIMessage(content="Again", id=response_id)]}),
+        ])
+    events = asyncio.run(_drain(PoirotStreamClient(_FakeGraph(chunks), {}).stream("Q")))
+    assert [e["content"] for e in events if e["type"] == "answer"] == ["Again", "Again"]
+
+
+def test_response_aliases_are_isolated_between_interleaved_calls() -> None:
+    first = {"langgraph_checkpoint_ns": "model:first", "langgraph_step": 1}
+    second = {"langgraph_checkpoint_ns": "model:second", "langgraph_step": 1}
+    graph = _FakeGraph([
+        ("values", {"messages": []}),
+        ("messages", (AIMessageChunk(content="", id="resp-1", response_metadata={"id": "resp-1"}), first)),
+        ("messages", (AIMessageChunk(content="", id="resp-2", response_metadata={"id": "resp-2"}), second)),
+        ("messages", (AIMessageChunk(content="First", id="lc-run-1"), first)),
+        ("messages", (AIMessageChunk(content="Second", id="lc-run-2"), second)),
+        ("values", {"messages": [AIMessage(content="First", id="resp-1"), AIMessage(content="Second", id="resp-2")]}),
+    ])
+    events = asyncio.run(_drain(PoirotStreamClient(graph, {}).stream("Q")))
+    assert [(e["msg_id"], e["content"]) for e in events if e["type"] == "answer"] == [
+        ("resp-1", "First"), ("resp-2", "Second"),
+    ]
+
+
+def test_response_alias_ends_before_a_later_call_in_the_same_node() -> None:
+    metadata = {"langgraph_checkpoint_ns": "model:call-1", "langgraph_step": 1}
+    graph = _FakeGraph([
+        ("values", {"messages": []}),
+        ("messages", (AIMessageChunk(content="", id="resp-1", response_metadata={"id": "resp-1"}), metadata)),
+        ("messages", (AIMessageChunk(content="First", id="lc-run-1", chunk_position="last"), metadata)),
+        ("messages", (AIMessageChunk(content="", id="lc-run-2"), metadata)),
+        ("values", {"messages": [AIMessage(content="First", id="resp-1"), AIMessage(content="Second", id="lc-run-2")]}),
+    ])
+    events = asyncio.run(_drain(PoirotStreamClient(graph, {}).stream("Q")))
+    assert [e["content"] for e in events if e["type"] == "answer"] == ["First", "Second"]
+
+
+def test_openai_responses_stream_renders_once_through_real_graph() -> None:
+    """Exercise the installed SDK and LangGraph with an offline Responses SSE stream."""
+    import json
+    import httpx
+    from langchain.agents import create_agent
+    from langchain_openai import ChatOpenAI
+
+    response = {
+        "id": "resp-offline", "object": "response", "created_at": 1,
+        "status": "completed", "model": "test-model", "error": None,
+        "output": [{
+            "id": "msg-offline", "type": "message", "role": "assistant",
+            "status": "completed",
+            "content": [{"type": "output_text", "text": "Hello world", "annotations": []}],
+        }],
+    }
+    items = [
+        {"type": "response.created", "response": {**response, "status": "in_progress", "output": []}},
+        {"type": "response.output_text.delta", "item_id": "msg-offline", "output_index": 0, "content_index": 0, "delta": "Hello "},
+        {"type": "response.output_text.delta", "item_id": "msg-offline", "output_index": 0, "content_index": 0, "delta": "world"},
+        {"type": "response.output_text.done", "item_id": "msg-offline", "output_index": 0, "content_index": 0, "text": "Hello world"},
+        {"type": "response.completed", "response": response},
+    ]
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(
+            200, headers={"content-type": "text/event-stream"},
+            content="".join(f"event: {item['type']}\ndata: {json.dumps(item)}\n\n" for item in items),
+        )
+
+    async def run():
+        transport = httpx.MockTransport(respond)
+        with httpx.Client(transport=transport) as sync_http:
+            async with httpx.AsyncClient(transport=transport) as async_http:
+                model = ChatOpenAI(
+                    model="test-model", api_key="offline-test-key", base_url="https://example.test/v1",
+                    use_responses_api=True, http_client=sync_http, http_async_client=async_http,
+                )
+                return await _drain(PoirotStreamClient(create_agent(model), {}).stream("Q"))
+
+    events = asyncio.run(run())
+    assert len(requests) == 1
+    assert requests[0].url.path == "/v1/responses"
+    assert "".join(e["content"] for e in events if e["type"] == "answer") == "Hello world"
+
+    from io import StringIO
+    from rich.console import Console
+    from poirot.backend.app.cli.stream_handler import StreamRenderer
+
+    output = StringIO()
+    renderer = StreamRenderer(Console(file=output, width=80))
+    for event in events:
+        renderer.render(event)
+    assert output.getvalue().count("Hello world") == 1

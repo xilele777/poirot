@@ -101,6 +101,44 @@ def _strip_skills_leak(text: str) -> str:
     return text.strip()
 
 
+class _StreamMessageIds:
+    """Associate provider response IDs with delta IDs within one model invocation.
+
+    Responses can announce an empty ``resp_*`` chunk, stream text as ``lc_run-*``,
+    then store the final message under ``resp_*``. Keep these aliases local to the
+    invocation; matching text alone would discard legitimate repeated answers.
+    """
+
+    def __init__(self) -> None:
+        self._aliases: dict[str, str] = {}
+        self._active: dict[tuple, str] = {}
+
+    def canonical(self, message_id: str | None) -> str | None:
+        return self._aliases.get(message_id, message_id)
+
+    def chunk_id(self, message: AIMessageChunk, metadata: Any) -> str | None:
+        message_id = message.id
+        scope = None
+        if isinstance(metadata, dict):
+            if metadata.get("run_id"):
+                scope = ("run", metadata["run_id"])
+            elif metadata.get("langgraph_checkpoint_ns"):
+                scope = ("node", metadata["langgraph_checkpoint_ns"], metadata.get("langgraph_step"))
+        if scope is None:
+            return self.canonical(message_id)
+
+        response_id = message.response_metadata.get("id")
+        if isinstance(response_id, str) and response_id:
+            self._active[scope] = response_id
+            self._aliases[response_id] = response_id
+        if message_id and scope in self._active:
+            self._aliases[message_id] = self._active[scope]
+        canonical = self.canonical(message_id)
+        if message.chunk_position == "last":
+            self._active.pop(scope, None)
+        return canonical
+
+
 class PoirotStreamClient:
     """流式研究服务——消费 graph.astream，产出 StreamEvent。
 
@@ -138,6 +176,7 @@ class PoirotStreamClient:
         _internal_answer_ids: set[str] = set()  # sync invoke 内部 LLM 响应（tag 未传播时 fallback）
         _answer_buffers: dict[str, str] = {}    # msg_id → 累积 answer 文本（selector 检测缓冲）
         _answer_safe: set[str] = set()          # msg_id 确认非 selector 输出（直接 yield）
+        message_ids = _StreamMessageIds()
         first_values_frame = True
 
         async for item in self._graph.astream(
@@ -182,15 +221,17 @@ class PoirotStreamClient:
                     if "internal_llm" in _tags:
                         continue
 
-                msg_id = getattr(msg_chunk, "id", None)
+                msg_id = (
+                    message_ids.chunk_id(msg_chunk, _metadata)
+                    if isinstance(msg_chunk, AIMessageChunk)
+                    else message_ids.canonical(getattr(msg_chunk, "id", None))
+                )
 
                 # AIMessageChunk → thinking + answer + tool_calls
                 if isinstance(msg_chunk, AIMessageChunk) or isinstance(msg_chunk, AIMessage):
                     # thinking: reasoning_content delta
                     reasoning = _extract_reasoning(msg_chunk)
                     if reasoning:
-                        if msg_id:
-                            streamed_ids.add(msg_id)
                         yield StreamEvent(
                             type="thinking", content=reasoning,
                             tool_name=None, tool_args=None, tool_result=None, msg_id=msg_id,
@@ -201,6 +242,13 @@ class PoirotStreamClient:
                     # internal_llm tag 在 async 流中可能丢失。JSON 跨多个 token delta，
                     # 逐 delta 检测无法命中，必须累积后判断。
                     text = _extract_text(msg_chunk.content)
+                    if not isinstance(msg_chunk, AIMessageChunk):
+                        # A complete message is a snapshot, not another delta.
+                        # Reasoning/empty chunks alone do not count as an answer.
+                        if msg_id and msg_id in streamed_ids:
+                            text = ""
+                        elif text:
+                            _answer_buffers.pop(msg_id, None)
                     if not text:
                         pass  # 空 delta，跳过下面处理
                     elif msg_id and msg_id in _internal_answer_ids:
@@ -331,14 +379,14 @@ class PoirotStreamClient:
                 # 第一帧 values 含 checkpoint 恢复的旧 messages，预填 seen_ids 跳过，防重复输出
                 if first_values_frame:
                     for msg in messages:
-                        msg_id = getattr(msg, "id", None)
+                        msg_id = message_ids.canonical(getattr(msg, "id", None))
                         if msg_id:
                             seen_ids.add(msg_id)
                             streamed_ids.add(msg_id)
                     first_values_frame = False
                     continue
                 for msg in messages:
-                    msg_id = getattr(msg, "id", None)
+                    msg_id = message_ids.canonical(getattr(msg, "id", None))
                     if msg_id and msg_id in seen_ids:
                         continue
                     if msg_id:
@@ -351,7 +399,12 @@ class PoirotStreamClient:
                     # 未通过 messages mode 输出的消息（如非 streaming 模型）
                     if isinstance(msg, AIMessage):
                         text = _extract_text(msg.content)
+                        # Final state replaces any undecided JSON buffer. Do not
+                        # append that same buffered content again after the loop.
+                        _answer_buffers.pop(msg_id, None)
                         if text and not _is_skills_selector_output(text):
+                            if msg_id:
+                                streamed_ids.add(msg_id)
                             yield StreamEvent(
                                 type="answer", content=text,
                                 tool_name=None, tool_args=None, tool_result=None, msg_id=msg_id,
