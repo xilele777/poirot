@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from poirot.backend.agents.reporting.markdown_reporter import last_assistant_answer
+
 
 @dataclass
 class ReportArtifact:
@@ -40,7 +42,7 @@ def generate_report_from_thread(
 
     1. graph.get_state({"configurable":{"thread_id":runtime.thread_id}}) 取 checkpointer 累积 state
     2. topic 非空 → 覆盖 state["research_question"]
-    3. reporter.generate_report(state) 合成（三级 fallback：final_report → observations/sources → last AIMessage）
+    3. 优先导出最新完整回答；没有回答时再使用 reporter 的证据/报告兜底
     4. save_artifact → artifact_store.save_artifact(...)
     """
     config = {"configurable": {"thread_id": runtime.thread_id}}
@@ -50,6 +52,11 @@ def generate_report_from_thread(
     )
     if topic:
         state["research_question"] = topic
+    answer = last_assistant_answer(state)
+    if answer:
+        # Export the answer the user just asked to save, not accumulated evidence
+        # (or an older expert report). Only mutate our shallow snapshot copy.
+        state["final_report"] = f"# {topic}\n\n{answer}" if topic else answer
 
     reporter = runtime.capability_registry.get_reporter()
     result = reporter.generate_report(state, run_context=None)

@@ -357,3 +357,21 @@ def test_openai_responses_stream_renders_once_through_real_graph() -> None:
     for event in events:
         renderer.render(event)
     assert output.getvalue().count("Hello world") == 1
+
+
+@pytest.mark.parametrize("mode", ["messages", "values"])
+@pytest.mark.parametrize("status,content,expected", [
+    ("error", "Permission denied", "error"),
+    ("success", '{"error": "Search failed"}', "error"),
+    ("success", '{"results": [{"content": "Article about errors"}]}', "success"),
+])
+def test_tool_result_status_reaches_stream_consumers(mode, status, content, expected):
+    from langchain_core.messages import ToolMessage
+
+    message = ToolMessage(content=content, status=status, name="web_search", tool_call_id="t1", id="m1")
+    graph = _FakeGraph([
+        ("values", {"messages": []}),
+        (mode, (message, {}) if mode == "messages" else {"messages": [message]}),
+    ])
+    events = asyncio.run(_drain(PoirotStreamClient(graph, {}).stream("Q")))
+    assert [event["tool_status"] for event in events if event["type"] == "tool_end"] == [expected]

@@ -7,6 +7,7 @@ FD17-FD19：最外层 wrap_tool_call，看到所有工具最终结果 + 捕获�
 
 from __future__ import annotations
 
+import json
 import re
 import threading
 import uuid
@@ -20,6 +21,7 @@ from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 
+from poirot.backend.agents.agent_tools.results import tool_error_text
 from poirot.backend.agents.middlewares.run_journal_middleware import _get_runtime_value
 from poirot.backend.agents.state.types import AgentError, ThreadState
 
@@ -108,14 +110,25 @@ def _is_failure(result: Any) -> tuple[str, str] | None:
     - HTTP 200 含封锁/空结果特征 → blocked/empty
     - 否则 None（成功）
     """
-    if isinstance(result, ToolMessage) and getattr(result, "status", None) == "error":
-        # 内层已标 error（如 Evidence 捕获异常）—— 从 content 推断分类
-        text = _tool_text(result)
-        for et in ("network", "rate_limit", "blocked", "empty", "server_error", "client_error"):
-            if et in text.lower():
-                return et, _reason_for(et)
-        return "unknown", _reason_for("unknown")
+    if isinstance(result, Command) and isinstance(result.update, dict):
+        for message in result.update.get("messages", []):
+            if isinstance(message, ToolMessage) and (failure := _is_failure(message)):
+                return failure
+        return None
+    if isinstance(result, ToolMessage):
+        error = tool_error_text(result)
+        if error is not None:
+            error_type = _classify_business_failure(error) or _classify_exception(RuntimeError(error))
+            return error_type, _reason_for(error_type)
     text = _tool_text(result)
+    # A successful JSON payload may discuss 403/empty results as article content.
+    # Classify its explicit error envelope above, never its nested evidence text.
+    try:
+        json.loads(text)
+    except (ValueError, TypeError):
+        pass
+    else:
+        return None
     biz = _classify_business_failure(text)
     if biz:
         return biz, _reason_for(biz)
@@ -260,6 +273,17 @@ class ToolCallMiddleware(AgentMiddleware):
                     related_refs=(call_id,), created_at=_now_iso(),
                 )
                 self._emit(runtime, "tool.failure_streak", {"tool": tool_name, "attempt": attempt, "type": error_type})
+                if isinstance(result, ToolMessage):
+                    result = result.model_copy(update={"status": "error"})
+                elif isinstance(result, Command) and isinstance(result.update, dict):
+                    result = Command(update={
+                        **result.update,
+                        "messages": [
+                            msg.model_copy(update={"status": "error"})
+                            if isinstance(msg, ToolMessage) and msg.tool_call_id == call_id else msg
+                            for msg in result.update.get("messages", [])
+                        ],
+                    })
             else:
                 kind = "success"
                 attempt = 0

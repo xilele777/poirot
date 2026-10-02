@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from langchain_core.messages import AIMessage
+
 from poirot.backend.agents.reporting.result import ReportResult
 
 
@@ -19,13 +21,13 @@ class MarkdownReporter:
         # 三级 fallback 优先级：
         # ① final_report 字段（ReportMiddleware 已合成完整报告，最优）
         # ② 渲染 observations/sources（结构化兜底，ReportMiddleware 未跑但有证据）
-        # ③ _last_ai_message（无证据：fast 模式 / 单轮对话，保留旧行为）
+        # ③ last_assistant_answer（无证据：fast 模式 / 单轮对话）
         if final_report_field:
             final_report = final_report_field
         elif observations:
             final_report = _render_structured(question, observations, sources)
         else:
-            ai_answer = _last_ai_message(thread_state)
+            ai_answer = last_assistant_answer(thread_state)
             body = ai_answer or "No answer collected."
             final_report = f"# {question}\n\n{body}"
 
@@ -51,12 +53,12 @@ def _render_structured(question: str, observations: list[Any], sources: list[Any
     return "\n".join(lines)
 
 
-def _last_ai_message(thread_state: dict[str, Any]) -> str:
+def last_assistant_answer(thread_state: dict[str, Any]) -> str:
+    """Return the latest completed assistant answer, excluding tool-call preambles."""
     messages = thread_state.get("messages", [])
     for msg in reversed(messages):
         content = getattr(msg, "content", None)
-        type_name = type(msg).__name__
-        if content and "AI" in type_name:
+        if isinstance(msg, AIMessage) and not msg.tool_calls and content:
             if isinstance(content, str):
                 return content
             if isinstance(content, list):

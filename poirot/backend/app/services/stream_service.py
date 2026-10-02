@@ -14,6 +14,8 @@ from typing import Any, AsyncIterator, TypedDict
 
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, ToolMessage
 
+from poirot.backend.agents.agent_tools.results import tool_error_text
+
 
 class _StreamEventBase(TypedDict):
     """流式事件标准化结构，供 CLI 消费渲染。"""
@@ -33,6 +35,7 @@ class StreamEvent(_StreamEventBase, total=False):
     """
 
     budget: dict | None
+    tool_status: str  # "success" | "error" on tool_end events
 
 
 def _extract_text(content: Any) -> str:
@@ -324,6 +327,7 @@ class PoirotStreamClient:
                         tool_args=None,
                         tool_result=_truncate(result_text),
                         msg_id=msg_id,
+                        tool_status="error" if tool_error_text(msg_chunk) is not None else "success",
                     )
 
                 continue
@@ -432,6 +436,7 @@ class PoirotStreamClient:
                             tool_args=None,
                             tool_result=_truncate(result_text),
                             msg_id=msg_id,
+                            tool_status="error" if tool_error_text(msg) is not None else "success",
                         )
 
                 # 检测 done：values 最后一帧含完整状态

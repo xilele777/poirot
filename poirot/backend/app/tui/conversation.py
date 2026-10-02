@@ -205,9 +205,10 @@ class ConversationLog(RichLog):
         """
         tool_name = event["tool_name"] or "unknown"
         summary = _result_summary(event["tool_result"])
-        color = _tool_color(tool_name)
+        failed = event.get("tool_status") == "error"
+        color = "red" if failed else _tool_color(tool_name)
         line = Text()
-        line.append("  ✓ ", style=color)
+        line.append("  ✗ " if failed else "  ✓ ", style=color)
         line.append(tool_name, style=color)
         line.append(f" → {summary}", style=theme.TEXT_DIM)
         self.write(line)

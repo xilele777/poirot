@@ -18,6 +18,7 @@ from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 
+from poirot.backend.agents.agent_tools.results import tool_error_text
 from poirot.backend.agents.state.types import Observation, Source, ThreadState
 
 # 证据类工具白名单（D9：MVP 手维护）。非白名单工具直接 passthrough。
@@ -141,6 +142,8 @@ class EvidenceMiddleware(AgentMiddleware):
         result = handler(request)
         if not isinstance(result, ToolMessage):
             return result
+        if tool_error_text(result) is not None:
+            return result.model_copy(update={"status": "error"})
 
         from poirot.backend.agents.observability.interrupt_protection import (
             interrupt_protection,
@@ -169,6 +172,8 @@ class EvidenceMiddleware(AgentMiddleware):
         result = await handler(request)
         if not isinstance(result, ToolMessage):
             return result
+        if tool_error_text(result) is not None:
+            return result.model_copy(update={"status": "error"})
 
         from poirot.backend.agents.observability.interrupt_protection import (
             interrupt_protection,

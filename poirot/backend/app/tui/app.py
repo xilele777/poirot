@@ -844,7 +844,8 @@ class PoirotTUI(App):
         if event.get("type") == "tool_start":
             panel.update(f"● {tool_name} · {mins}m{secs:02d}s · Esc cancel")
         elif event.get("type") == "tool_end":
-            panel.update(f"✓ {tool_name} · {mins}m{secs:02d}s")
+            marker = "✗" if event.get("tool_status") == "error" else "✓"
+            panel.update(f"{marker} {tool_name} · {mins}m{secs:02d}s")
             self._flush_steer_queue()
 
     def _queue_steer(self, text: str) -> None:

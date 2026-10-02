@@ -95,7 +95,7 @@ def _result_status(result: Any) -> str:
         errors = update.get("errors")
         if isinstance(errors, list):
             for err in errors:
-                if isinstance(err, dict) and err.get("kind") == "failure":
+                if (err.get("kind") if isinstance(err, dict) else getattr(err, "kind", None)) == "failure":
                     return "error"
         messages = update.get("messages")
         if isinstance(messages, list):

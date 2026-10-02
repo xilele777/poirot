@@ -170,8 +170,10 @@ class StreamRenderer:
 
         tool_name = event["tool_name"] or "unknown"
         summary = _result_summary(event["tool_result"])
-        color = _tool_color(tool_name)
-        self.console.print(f"  [{color}]✓ {tool_name}[/{color}] [dim]→ {summary}[/dim]", highlight=False)
+        failed = event.get("tool_status") == "error"
+        color = "red" if failed else _tool_color(tool_name)
+        marker = "✗" if failed else "✓"
+        self.console.print(f"  [{color}]{marker} {tool_name}[/{color}] [dim]→ {summary}[/dim]", highlight=False)
 
         # 存全文供 /expand
         if event["tool_result"]:

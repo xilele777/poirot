@@ -10,7 +10,18 @@ checkpointer 是 create_agent(checkpointer=...) 编译参数，LangGraph 内部�
 from __future__ import annotations
 
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.types import Checkpointer
+
+# Only application records that can occur in ThreadState. LangGraph's own safe
+# message types remain supported; do not enable arbitrary module deserialization.
+_CHECKPOINT_TYPES = [
+    ("poirot.backend.agents.state.types", name)
+    for name in (
+        "IntentState", "PlanStep", "ResearchPlan", "Observation", "Source",
+        "Citation", "Artifact", "ReflectionItem", "AgentError",
+    )
+] + [("poirot.backend.agents.multiagent.types", "ArtifactRef")]
 
 _cp: Checkpointer | None = None
 
@@ -23,7 +34,7 @@ def get_checkpointer() -> Checkpointer:
     """
     global _cp
     if _cp is None:
-        _cp = InMemorySaver()
+        _cp = InMemorySaver(serde=JsonPlusSerializer(allowed_msgpack_modules=_CHECKPOINT_TYPES))
     return _cp
 
 
