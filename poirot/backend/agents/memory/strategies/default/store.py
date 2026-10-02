@@ -1,22 +1,16 @@
-"""MarkdownFileStore — Markdown 持久化 truth source（00 §8.2）。
+"""Markdown truth source with locked read-modify-write and atomic replacement.
 
-承接 `Hezao-MemDesign-Docs/poirot/50-memory-l3-store-retriever.md` §4 Step 1。
-
-实现 MemoryStore Protocol。Markdown 单文件 traces.md + 内存索引。
-无事务（2A）：逐个操作，失败 log，接受最终一致。
-文件锁（6B）：threading.Lock 保护 update（单进程）。
-list_by_filter（7A）：按 max_age_hours 粗筛内存索引。
-解析容错（2A）：frontmatter 损坏 log + 跳过，不崩。
-
-INVARIANT：
-- Markdown-as-Truth：traces.md 是 truth source，内存索引是 derived（可重建）
-- 单文件 + 分隔符：所有 trace 在 traces.md，用 `<!-- trace: {id} -->` 分隔（方案 B）
-- storage_path 锚定：相对路径用 cwd fallback（Layer 4 bootstrap 传绝对路径锚定 _PROJECT_ROOT）
+The sidecar lock coordinates independent processes. Cached reads refresh when
+another writer replaces the data file. A single trace update remains replacement
+semantics; this is not a transaction spanning multiple manager operations.
 """
 
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
+from contextlib import contextmanager
 import re
 import threading
 import time
@@ -36,12 +30,13 @@ from poirot.backend.agents.memory.schema import (
     OperationLog,
 )
 from poirot.backend.agents.memory.types import MemoryFilter
+from poirot.backend.agents.storage.file_lock import exclusive_file_lock
 
 logger = logging.getLogger(__name__)
 
 # <!-- trace: {id} --> 分隔符，捕获 id + body（到下一个分隔符或文件尾）
 _TRACE_SEPARATOR = re.compile(
-    r"<!-- trace: ([a-f0-9]+) -->\n(.*?)(?=<!-- trace:|$)", re.DOTALL
+    r"<!-- trace: ([\w-]+) -->\n(.*?)(?=<!-- trace:|$)", re.DOTALL
 )
 
 
@@ -50,7 +45,7 @@ class MarkdownFileStore:
 
     单文件 traces.md + 内存索引 dict[str, MemoryTrace]。
     构造即就绪：读 storage_path/traces.md，解析所有 trace 建内存索引。
-    文件锁：threading.Lock 保护写操作（6B 单进程）。
+    文件锁：sidecar 排他锁覆盖跨进程读取和提交。
     """
 
     def __init__(self, storage_path: str | Path) -> None:
@@ -66,7 +61,10 @@ class MarkdownFileStore:
         self._lock = threading.Lock()  # 6B 文件锁（单进程）
         # 内存索引：trace_id → MemoryTrace（启动加载 + 增量维护）
         self._traces: dict[str, MemoryTrace] = {}
-        self._load()
+        self._signature = None
+        with self._transaction():
+            if not self._traces_file.exists():
+                self._rewrite_file()
 
     def _resolve_storage_path(self, storage_path: str | Path) -> Path:
         """解析 storage_path（相对路径锚定 cwd fallback，01 D12）。
@@ -79,26 +77,40 @@ class MarkdownFileStore:
             return p
         return p.resolve()  # 相对路径锚定 cwd
 
-    def _load(self) -> None:
-        """启动加载：读 traces.md 解析所有 trace + 建内存索引。
+    def _file_signature(self):
+        try:
+            stat = self._traces_file.stat()
+            return stat.st_mtime_ns, stat.st_size, stat.st_ino
+        except FileNotFoundError:
+            return None
 
-        traces.md 不存在时创建空文件。
-        解析容错（2A）：单条 frontmatter 损坏 log + 跳过，不崩。
-        """
-        if not self._traces_file.exists():
-            self._traces_file.write_text("# Memory Traces\n\n", encoding="utf-8")
-            return
-        content = self._traces_file.read_text(encoding="utf-8")
-        for match in _TRACE_SEPARATOR.finditer(content):
-            trace_id = match.group(1)
-            trace_body = match.group(2).strip()
-            trace = self._parse_trace(trace_id, trace_body)
-            if trace is not None:
-                self._traces[trace.id] = trace
-        logger.info(
-            "MarkdownFileStore loaded %d traces from %s",
-            len(self._traces), self._traces_file,
-        )
+    def _load(self) -> None:
+        traces: dict[str, MemoryTrace] = {}
+        if self._traces_file.exists():
+            # Called under the sidecar lock: signature and content belong to one revision.
+            content = self._traces_file.read_text(encoding="utf-8")
+            for match in _TRACE_SEPARATOR.finditer(content):
+                trace = self._parse_trace(match.group(1), match.group(2).strip())
+                if trace is not None:
+                    traces[trace.id] = trace
+        self._traces = traces
+        self._signature = self._file_signature()
+
+    @contextmanager
+    def _transaction(self):
+        with self._lock, exclusive_file_lock(self._root / "traces.lock"):
+            self._load()
+            try:
+                yield
+            except BaseException:
+                self._load()  # discard an uncommitted in-memory update
+                raise
+
+    def _snapshot(self) -> dict[str, MemoryTrace]:
+        with self._lock, exclusive_file_lock(self._root / "traces.lock"):
+            if self._signature != self._file_signature():
+                self._load()
+            return dict(self._traces)
 
     def _parse_trace(self, trace_id: str, body: str) -> MemoryTrace | None:
         """解析单条 trace（frontmatter + content）→ MemoryTrace。
@@ -225,45 +237,64 @@ class MarkdownFileStore:
 
         6B 文件锁保护：并发 add 序列化。
         """
-        with self._lock:
+        if not re.fullmatch(r"[\w-]+", trace.id):
+            raise ValueError("trace id must contain only letters, digits, underscores or hyphens")
+        with self._transaction():
             if trace.id in self._traces:
                 raise MemoryConflictError(
                     f"trace already exists: {trace.id}",
                     old_id=trace.id, new_id=trace.id,
                 )
             self._traces[trace.id] = trace
-            self._append_to_file(trace)
+            self._rewrite_file()
 
     def get(self, trace_id: str) -> MemoryTrace | None:
         """按 id 取记忆，不存在返 None。"""
-        return self._traces.get(trace_id)
-
-    def _append_to_file(self, trace: MemoryTrace) -> None:
-        """追加单条 trace 到 traces.md（增量写）。"""
-        block = f"<!-- trace: {trace.id} -->\n{self._serialize_trace(trace)}\n\n"
-        with open(self._traces_file, "a", encoding="utf-8") as f:
-            f.write(block)
+        return self._snapshot().get(trace_id)
 
     def _rewrite_file(self) -> None:
-        """全量重写 traces.md（update/remove/batch_update 后）。
-
-        Layer 3 先用全量重写（简化），增量改留后续优化（记忆量大时）。
-        """
-        with open(self._traces_file, "w", encoding="utf-8") as f:
-            f.write("# Memory Traces\n\n")
-            for trace in self._traces.values():
-                f.write(f"<!-- trace: {trace.id} -->\n{self._serialize_trace(trace)}\n\n")
+        """Serialize fully before touching disk; replace only a flushed complete file."""
+        content = "# Memory Traces\n\n" + "".join(
+            f"<!-- trace: {trace.id} -->\n{self._serialize_trace(trace)}\n\n"
+            for trace in self._traces.values()
+        )
+        temporary: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n",
+                                             dir=self._root, prefix=".traces-", delete=False) as f:
+                temporary = Path(f.name)
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temporary, self._traces_file)
+            # YAML normalizes e.g. operation-log tuple values to lists. Cache the
+            # committed representation so conditional updates compare like with like.
+            self._load()
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
     def update(self, trace: MemoryTrace) -> None:
         """更新记忆（frozen 语义：替换）。trace.id 不存在抛 MemoryNotFoundError。
 
-        6B 文件锁保护：并发 update 序列化，防丢更新。
+        锁内重读最新文件，再替换指定 trace，保留其他实例新增的记录。
         """
-        with self._lock:
+        with self._transaction():
             if trace.id not in self._traces:
                 raise MemoryNotFoundError(trace.id)
             self._traces[trace.id] = trace
             self._rewrite_file()
+
+    def compare_and_update(self, expected: MemoryTrace, updated: MemoryTrace) -> bool:
+        """Commit a retrieval reinforcement only if the trace has not changed."""
+        if expected.id != updated.id:
+            raise ValueError("compare-and-update cannot change a trace id")
+        with self._transaction():
+            if self._traces.get(expected.id) != expected:
+                return False
+            self._traces[updated.id] = updated
+            self._rewrite_file()
+            return True
 
     def batch_update(self, traces: list[MemoryTrace]) -> None:
         """批量更新（F2 决策，consolidate 标记 N 条旧 trace forgotten 用）。
@@ -272,7 +303,7 @@ class MarkdownFileStore:
         一次 _rewrite_file 全量重写（非 N 次 O(N²)）。
         6B 文件锁保护（与 update 同锁）。
         """
-        with self._lock:
+        with self._transaction():
             for trace in traces:
                 if trace.id not in self._traces:
                     raise MemoryNotFoundError(trace.id)
@@ -282,7 +313,7 @@ class MarkdownFileStore:
 
     def remove(self, trace_id: str) -> None:
         """删除记忆。不存在静默（幂等）。"""
-        with self._lock:
+        with self._transaction():
             if trace_id in self._traces:
                 del self._traces[trace_id]
                 self._rewrite_file()
@@ -290,7 +321,7 @@ class MarkdownFileStore:
     def list_by_type(self, type: MemoryType) -> list[MemoryTrace]:
         """按类型列出。"""
         type_key = type.value if isinstance(type, MemoryType) else str(type)
-        return [t for t in self._traces.values() if t.type.value == type_key]
+        return [t for t in self._snapshot().values() if t.type.value == type_key]
 
     def list_by_filter(self, filter: MemoryFilter) -> list[MemoryTrace]:
         """按过滤器列出（7A 粗筛 + 调用方精算 strength）。
@@ -298,7 +329,7 @@ class MarkdownFileStore:
         7A：store 只按 max_age_hours / type / metadata 粗筛（内存索引），
         strength 精算由调用方（forget_policy）逐条 compute_strength。
         """
-        result = list(self._traces.values())
+        result = list(self._snapshot().values())
         # type 过滤
         if filter.type_filter is not None:
             type_key = (
@@ -325,4 +356,4 @@ class MarkdownFileStore:
 
     def list_all(self) -> list[MemoryTrace]:
         """列出全部。"""
-        return list(self._traces.values())
+        return list(self._snapshot().values())

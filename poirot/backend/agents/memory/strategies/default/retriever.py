@@ -59,6 +59,7 @@ class HybridRetriever:
         self._inverted_index: dict[str, dict[str, int]] = defaultdict(dict)
         # trace 长度（分词后 token 数，BM25 用）
         self._trace_lengths: dict[str, int] = {}
+        self._indexed_content: dict[str, str] = {}
         # 全量建索引（5B 冷启动）
         self._build_index_from_store()
 
@@ -71,6 +72,7 @@ class HybridRetriever:
 
     def _index_trace(self, trace: MemoryTrace) -> None:
         """单条 trace 入索引（5B 增量）。"""
+        self._indexed_content[trace.id] = trace.content
         tokens = self._tokenize(trace.content)
         self._trace_lengths[trace.id] = len(tokens)
         tf: dict[str, int] = defaultdict(int)
@@ -81,6 +83,7 @@ class HybridRetriever:
 
     def _remove_trace_from_index(self, trace_id: str) -> None:
         """单条 trace 从索引移除（5B 增量）。"""
+        self._indexed_content.pop(trace_id, None)
         self._trace_lengths.pop(trace_id, None)
         for token in list(self._inverted_index.keys()):
             self._inverted_index[token].pop(trace_id, None)
@@ -99,10 +102,21 @@ class HybridRetriever:
 
         # 3B forgotten 过滤 + 候选集
         candidates = [t for t in self._store.list_all() if not t.metadata.get("forgotten")]
+        live = {t.id: t for t in candidates}
+        for trace_id in set(self._indexed_content) - live.keys():
+            self._remove_trace_from_index(trace_id)
+        for trace in candidates:
+            if self._indexed_content.get(trace.id) != trace.content:
+                self._remove_trace_from_index(trace.id)
+                self._index_trace(trace)
+        if query.metadata_filter:
+            candidates = [t for t in candidates if all(
+                t.metadata.get(k) == v for k, v in query.metadata_filter.items()
+            )]
         if query.type_filter is not None:
             type_key = (
                 query.type_filter.value
-                if isinstance(query.type_filter, type(query.type_filter))
+                if hasattr(query.type_filter, "value")
                 else str(query.type_filter)
             )
             candidates = [t for t in candidates if t.type.value == type_key]
@@ -134,7 +148,12 @@ class HybridRetriever:
         for trace, score in top:
             new_strength = self._decay_policy.compute_strength(trace, now)
             strengthened = trace.with_strength(new_strength, now)
-            self._store.update(strengthened)  # 1A 内部写回
+            compare_and_update = getattr(self._store, "compare_and_update", None)
+            if callable(compare_and_update):
+                if not compare_and_update(trace, strengthened):
+                    continue  # changed or deleted by another writer; do not restore stale content
+            else:
+                self._store.update(strengthened)
             results.append(RetrievalResult.compute_score(strengthened, score, new_strength))
 
         return results
